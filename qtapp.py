@@ -8,8 +8,7 @@ from PyQt5.Qt import *
 
 class VideoContainer(QWidget):
     def sizeHint(self):
-        if not self.vwidth:
-            return QWidget.sizeHint(self)
+        if not self.vwidth:return QWidget.sizeHint(self)
         return QSize(self.vwidth, self.vheight)
 
     def __init__(self, parent):
@@ -115,39 +114,25 @@ class MPV(QObject):
         self.playlist = []
         self.playlist_pos = None
         self.wakeup.connect(self.handle_event)
-        
         options, media = self.get_options(args)
-
         try:
-            self.m = mpv.Context()
-        except mpv.MPVError:
-            print('failed creating context')
+            self.m = mpv.Context('input-default-bindings','osc',wid=wid,**options)
+        except mpv.MPVError as e:
+            print('failed creating context',e.message)
             qApp.exit(1)
-
-        for option in options.items():
-            self.m.set_option(*option)
-
+#        for option in options.items():self.m.set_option(*option)
         self.m.set_log_level('info')
-        self.m.set_option('input-default-bindings')
-        self.m.set_option('osc')
-        self.m.set_option('wid', wid)
-        
-        self.m.initialize()
-        
+#        self.m.set_option('input-default-bindings')
+#        self.m.set_option('osc')
+#        self.m.set_option('wid', wid)
+#        self.m.initialize()
         self.m.observe_property('playlist')
         self.m.observe_property('playlist-pos')
         self.m.observe_property('fullscreen')
-        
-        for media in media:
-            self.m.command('loadfile', media, 'append')
-        
-        if media:
-            self.m.set_property('playlist-pos', 0)
-        
+        for media in media:self.m.command('loadfile', media, 'append')
+        if media:self.m.set_property('playlist-pos', 0)
         self.m.set_wakeup_callback(self.mpv_wakeup)
-
         return self
-
     def handle_event(self):
         while True:
             event = self.m.wait_event(0)
@@ -164,8 +149,7 @@ class MPV(QObject):
                 print(event.data.text, end='')
             elif (event.id == mpv.Events.end_file
              or event.id == mpv.Events.video_reconfig):
-                try:
-                    self.reconfig.emit(
+                try:self.reconfig.emit(
                         self.m.get_property('dwidth'),
                         self.m.get_property('dheight')
                     )
