@@ -1,6 +1,6 @@
 #! /usr/bin/env python3.5
 from __future__ import print_function, division,  absolute_import
-import argparse, ctypes, sys, pprint, time, mpv, av
+import argparse, ctypes, sys, pprint, time, mpv 
 
 import posix,posixpath
 
