@@ -12,39 +12,44 @@ class TopWindow(Q.QMainWindow):
         self.playlistdock.setWindowTitle("Playlist")
         self.playlistdock.setFeatures(QW.QDockWidget.DockWidgetFloatable| QW.QDockWidget.DockWidgetMovable)
         self.playlistdock.setWidget(self.playlist)
-    def crossfadechanged(self, cross):
-        self.players[0].volume = (100.- cross)/2
-        print( self.players[0].volume)
-        self.players[1].volume = (100 + cross )/2
-        print( self.players[1].volume)
+    def onCrossfadeChanged(self, cross):
+        self.players[0].m.volume = (100.- cross)/2
+        print( self.players[0].m.volume)
+        self.players[1].m.volume = (100 + cross )/2
+        print( self.players[1].m.volume)
         print(cross)
+    def openFile0(self):
+        prev,self.playlist.player = self.playlist.player,self.players[0]
+        self.playlist.openFile()
+        self.playlist.player = prev
+    def openFile1(self):
+        prev,self.playlist.player = self.playlist.player,self.players[1]
+        self.playlist.openFile()
+        self.playlist.player = prev
     def __init__(self,n=2,*args,**kwargs):
         super(self.__class__,self).__init__()
-        self.players = []
-        self.players.append(Player())
-        self.players.append(Player())
+        self.players = [Player() for _ in range(max(1,n))]
         self.createPlaylistDock()
         self.addDockWidget(Q.Qt.LeftDockWidgetArea,self.playlistdock)
         self.playlistdock.fileMenu = self.menuBar().addMenu("&File")
         self.playlistdock.fileMenu.addAction("&Open...",self.playlist.openFile,"Ctrl+O")
+        self.playlistdock.fileMenu.addAction("Open player &1...",self.playlist.openFile,"Ctrl+1")
+        self.playlistdock.fileMenu.addAction("Open player &2...",self.playlist.openFile,"Ctrl+2")
         self.playlistdock.fileMenu.addAction("E&xit",self.close,"Ctrl+Q")
-        #for i in range(n):
-#            self.players.append(player)
         widget = Q.QWidget()
         layout = Q.QVBoxLayout()
         layout.setContentsMargins(0,0,0,0)
         splitter = Q.QSplitter()
         layout.addWidget(splitter)
-        for player in self.players:
-            player.softvol=True
-            playerwidget = PlayerWidget(player,self,*args)
-            splitter.addWidget(playerwidget)
-        self.crossfade = Q.QSlider(Q.Qt.Horizontal)
-        crossfade = self.crossfade
-        crossfade.setRange(-100,100)
-        crossfade.setEnabled(True)
-        crossfade.valueChanged.connect(self.crossfadechanged)
-        layout.addWidget(crossfade)
+        for p in self.players:
+            p.softvol=True
+            splitter.addWidget(PlayerWidget(p,self,*args))
+        cf = self.crossfade = Q.QSlider(Q.Qt.Horizontal)
+        cf.setRange(-100,100)
+        cf.setEnabled(True)
+        cf.valueChanged.connect(self.onCrossfadeChanged)
+        layout.addWidget(cf)
+
         widget.setLayout(layout)
         self.setCentralWidget(widget);
 

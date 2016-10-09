@@ -9,12 +9,12 @@ class Player(Q.QObject):
     import mpv
     novid = Q.pyqtSignal()
     hasvid = Q.pyqtSignal()
-    playlistchanged = Q.pyqtSignal(object)
-    playlist_poschanged = Q.pyqtSignal(int)
-    percent_poschanged = Q.pyqtSignal(object)
+    playlistChanged = Q.pyqtSignal(object)
+    playlist_posChanged = Q.pyqtSignal(int)
+    percent_posChanged = Q.pyqtSignal(object)
     reconfig = Q.pyqtSignal(int,int)
     fullscreen = Q.pyqtSignal(bool)
-    speedchanged = Q.pyqtSignal(object)
+    speedChanged = Q.pyqtSignal(object)
     wakeup = Q.pyqtSignal()
     def get_options(self,*args,**kwargs):
         options = kwargs
@@ -84,7 +84,7 @@ class Player(Q.QObject):
                 continue;
             if event.id == self.mpv.Events.none:
                 break;
-            elif event.id == self.mpv.Events.shutdown: 
+            elif event.id == self.mpv.Events.shutdown:
                 Q.qApp.exit()
                 break;
             elif event.id == self.mpv.Events.idle:
@@ -93,7 +93,7 @@ class Player(Q.QObject):
                 self.hasvid.emit()
             elif event.id == self.mpv.Events.log_message:
                 print(event.data.text,)
-            elif (event.id == self.mpv.Events.end_file 
+            elif (event.id == self.mpv.Events.end_file
                     or event.id == self.mpv.Events.video_reconfig):
                 try:
                     self.reconfig.emit(
@@ -104,8 +104,8 @@ class Player(Q.QObject):
                     self.reconfig.emit(None,None)
             elif event.id == self.mpv.Events.property_change:
                 name = event.data.name.replace('-','_')
-                if hasattr(self,name+'changed'):
-                    prop_changed = getattr(self,name+'changed')
+                if hasattr(self,name+'Changed'):
+                    prop_changed = getattr(self,name+'Changed')
                     if(hasattr(prop_changed,'emit')):
                         setattr(self,name,event.data.data)
                         prop_changed.emit(event.data.data)
