@@ -2,6 +2,7 @@
 from PyQt5 import Qt as Q, QtWidgets as QW, QtGui as QG
 from functools import partial,partialmethod
 import sys
+import player
 class PlayListItem(Q.QListWidgetItem):
     def __init__(self,parent, path,*args,**kwargs):
         super().__init__(parent, *args,**kwargs)
@@ -12,20 +13,25 @@ class PlayListItem(Q.QListWidgetItem):
 class PlayList(Q.QListWidget):
     requestPlaylistPos = Q.pyqtSignal(object)
     requestFile = Q.pyqtSignal(object)
-    def __loadfileAction(self, player):
+    def __loadfileAction(self, where):
         ci = self.currentItem()
         if not ci or not ci.path:
             return
         filePath = str(self.currentItem().path)
         print(filePath)
-        for idx, it in enumerate(player.m.playlist):
+        if not isinstance(where,player.Player):
+            where = self._parent.getPlayerAt(where)
+        for idx, it in enumerate(where.m.playlist):
             if it['filename'] == filePath:
-                player.m.playlist_pos = idx
+                where.m.playlist_pos = idx
                 return
-        player.command('loadfile',filePath, 'append-play')
-        for idx, it in enumerate(player.m.playlist):
+        where.command('loadfile',filePath, 'append-play')
+        w = where.widget
+        if w:
+            w.show()
+        for idx, it in enumerate(where.m.playlist):
             if it['filename'] == filePath:
-                player.m.playlist_pos = idx
+                where.m.playlist_pos = idx
                 return
     @property
     def players(self):
@@ -48,7 +54,9 @@ class PlayList(Q.QListWidget):
         acts = self.actions()
         for a in acts:
             if a: self.removeAction(a)
-
+        a = Q.QAction("Load to new &player",self)
+        a.triggered.connect(partial(self.__loadfileAction,-1))
+        self.addAction(a)
         for i,p in enumerate(self.players):
             a = Q.QAction("Load to player {}".format(i),self)
             a.triggered.connect(partial(self.__loadfileAction,p))
@@ -75,9 +83,13 @@ class PlayList(Q.QListWidget):
         fileDialog.setViewMode(Q.QFileDialog.Detail)
         fileDialog.setDirectory(Q.QDir.home().canonicalPath())
         if fileDialog.exec():
-            for filePath in fileDialog.selectedFiles():
-                print("\n"+filePath+"\n")
-                self.player.command("loadfile",str(filePath),"append-play")
+            if fileDialog.selectedFiles():
+                for filePath in fileDialog.selectedFiles():
+                    print("\n"+filePath+"\n")
+                    self.player.command("loadfile",str(filePath),"append-play")
+                w = self.player.widget
+                if w:
+                    w.show()
 
     @Q.pyqtSlot(object)
     def onPlaylistChanged(self,playlist):

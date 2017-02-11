@@ -7,19 +7,38 @@ import sys
 class PlayerWidget(Q.QWidget):
     requestFile = Q.pyqtSignal(object)
     def novid(self):
+        self.sized_once = False
         self.hide()
     def hasvid(self):
+        self.sized_once = False
         self.show()
+    def idealConfig(self):
+        try:
+            params = self.player.video_params
+            if params['w'] and params['h']:
+                self.vwidth = params['w']
+                self.vheight = params['h']
+                self.resize(self.vwidth,self.vheight)
+                self.sized_once = True
+        except:
+            self.sized_once = False
     def reconfig(self,width,height):
-        self.wwidth = width
-        self.wheight= height
-        if not self.sized_once and width:
+        self.vwidth = width
+        self.vheight= height
+        if (not self.sized_once) and width:
             self.resize(self.sizeHint())
             self.sized_once = True
     def sizeHint(self):
         if not self.vwidth:
             return QW.QWidget.sizeHint(self)
         return Q.QSize(self.vwidth, self.vheight)
+    @Q.pyqtSlot(object)
+    def onVideo_paramsChanged(self,params):
+        print("video params changed: ",repr(params))
+        try:
+            self.reconfig(params['w'],params['h'])
+        except:
+            pass
     @Q.pyqtSlot(int)
     def onTimelineChanged(self,when):
         s = min(max(0.,when * 100./self.timeline_base),100.)
@@ -129,6 +148,7 @@ class PlayerWidget(Q.QWidget):
         control_layout.addLayout(rate_up_layout)
 
         player.reconfig.connect(self.reconfig)
+        player.video_paramsChanged.connect(self.onVideo_paramsChanged)
         player.novid.connect(self.novid)
         self.sized_once = False
         player.hasvid.connect(self.hasvid)
@@ -138,4 +158,4 @@ class PlayerWidget(Q.QWidget):
         self.playlist = self.parent.playlist
         self.requestFile.connect(self.onRequestFile)
 #        self.player.playlist_poschanged.connect(self.playlist.onplaylist_poschanged)
-        self.player.init(int(self.childwin.winId()),*args,**kwargs)
+        self.player.init(self,*args,**kwargs)

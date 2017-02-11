@@ -1,5 +1,6 @@
 from __future__ import print_function, division
 from PyQt5 import Qt as Q, QtWidgets as QW, QtGui as QG
+import weakref
 import sys
 from playlist import PlayList, PlayListItem
 
@@ -13,6 +14,7 @@ class Player(Q.QObject):
     reconfig = Q.pyqtSignal(int,int)
     fullscreen = Q.pyqtSignal(bool)
     speedChanged = Q.pyqtSignal(object)
+    video_paramsChanged = Q.pyqtSignal(object)
     wakeup = Q.pyqtSignal()
     def get_options(self,*args,**kwargs):
         options = kwargs
@@ -34,6 +36,7 @@ class Player(Q.QObject):
         super().__init__(*args,**kwargs)
         self.playlist = list()
         self.playlist_pos = None
+        self._widget = None
         self.wakeup.connect(self.on_event)
         options,media = self.get_options(*args,**kwargs)
         import locale
@@ -48,9 +51,19 @@ class Player(Q.QObject):
         self.m.observe_property('playlist-pos')
         self.m.observe_property('percent-pos')
         self.m.observe_property('fullscreen')
+        self.m.observe_property('video-params')
         self.m.observe_property("speed")
-    def init(self,wid,*args,**kwargs):
+    @property
+    def widget(self):
+        return self._widget() if self._widget is not None else None
+
+    def init(self,widget,*args,**kwargs):
+        pwidget = self.widget
+        if pwidget:
+            return
         options,media = self.get_options(*args,**kwargs)
+        self._widget = weakref.ref(widget)
+        wid = int(widget.childwin.winId())
         print("attempting to use window id ",wid)
         self.m.set_option('wid',wid)
         for option in options.items():
@@ -60,6 +73,7 @@ class Player(Q.QObject):
         self.m.observe_property('playlist-pos')
         self.m.observe_property('percent-pos')
         self.m.observe_property('fullscreen')
+        self.m.observe_property('video-params')
         self.m.observe_property("speed")
 
         for med in media:
