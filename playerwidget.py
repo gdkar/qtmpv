@@ -3,8 +3,7 @@ from __future__ import division
 from PyQt5 import Qt as Q, QtWidgets as QW, QtGui as QG
 from functools import partial,partialmethod
 import sys
-if sys.version_info.major > 2:
-    basestring = str
+
 class PlayerWidget(Q.QWidget):
     requestFile = Q.pyqtSignal(object)
     def novid(self):
@@ -23,7 +22,9 @@ class PlayerWidget(Q.QWidget):
         return Q.QSize(self.vwidth, self.vheight)
     @Q.pyqtSlot(int)
     def onTimelineChanged(self,when):
-        self.player.command("seek",when*100./self.timeline_base,"absolute-percent")
+        s = min(max(0.,when * 100./self.timeline_base),100.)
+        self.player.try_command("seek",s,"absolute-percent")
+
     @Q.pyqtSlot(object)
     def onPercent_posChanged(self,percent_pos):
         if percent_pos:
@@ -43,17 +44,12 @@ class PlayerWidget(Q.QWidget):
             self.speed.blockSignals(False)
     def pause(self):
         self.player.command("cycle","pause")
-    def rate_forward(self):
-        self.speed.setValue(int(self.speed.value() * 1.1))
-    def rate_back(self):
-        self.speed.setValue(int(self.speed.value() / 1.1))
+    def rate_adj(self, val):
+        self.speed.setValue(int(self.speed.value() * val))
     def temp_rate(self, factor):
         self.pitch_bend *= factor
         self.speed.setValue(int(self.speed.value() * factor))
-    @Q.pyqtSlot()
-    def temp_rate_forward(self): self.temp_rate(1.1)
-    @Q.pyqtSlot()
-    def temp_rate_back(self):    self.temp_rate(1./1.1)
+
     @Q.pyqtSlot()
     def temp_rate_release(self):
         self.speed.setValue(int(self.speed.value() / self.pitch_bend))
@@ -63,10 +59,11 @@ class PlayerWidget(Q.QWidget):
         print("Setting playlist binding to ", self)
         self.playlist.setPlayer(self.player)
         self.playlist.onRequestFile(path)
+
     def mousePressEvent(self,event):
         print("Setting playlist binding to ", self)
         self.playlist.setPlayer(self.player)
-        super(self.__class__,self).mousePressEvent(event)
+        super().mousePressEvent(event)
     def __init__(self,player,parent, *args, **kwargs):
         super(self.__class__,self).__init__(parent)
         self.pitch_bend = 1.0
@@ -101,17 +98,17 @@ class PlayerWidget(Q.QWidget):
         self.play_button = play_button
 
         rate_down_button = Q.QPushButton("rate -")
-        rate_down_button.clicked.connect(self.rate_back)
+        rate_down_button.clicked.connect(lambda: self.rate_adj(1./1.1))
 
         rate_down_tmp_button = Q.QPushButton(" tmp -")
-        rate_down_tmp_button.pressed.connect(self.temp_rate_back)
+        rate_down_tmp_button.pressed.connect(lambda:self.temp_rate(1./1.1))
         rate_down_tmp_button.released.connect(self.temp_rate_release)
 
         rate_up_button = Q.QPushButton("rate +")
-        rate_up_button.clicked.connect(self.rate_forward)
+        rate_up_button.clicked.connect(lambda: self.rate_adj(1.1))
 
         rate_up_tmp_button = Q.QPushButton(" tmp +")
-        rate_up_tmp_button.pressed.connect(self.temp_rate_forward)
+        rate_up_tmp_button.pressed.connect(lambda:self.temp_rate(1.1))
         rate_up_tmp_button.released.connect(self.temp_rate_release)
 
         rate_down_layout = Q.QVBoxLayout()

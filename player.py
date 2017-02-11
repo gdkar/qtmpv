@@ -1,8 +1,6 @@
 from __future__ import print_function, division
 from PyQt5 import Qt as Q, QtWidgets as QW, QtGui as QG
 import sys
-if sys.version_info.major > 2:
-    basestring = str
 from playlist import PlayList, PlayListItem
 
 class Player(Q.QObject):
@@ -33,7 +31,7 @@ class Player(Q.QObject):
         except self.mpv.MPVError as e:
             return None
     def __init__(self,*args,**kwargs):
-        super(self.__class__,self).__init__(*args,**kwargs)
+        super().__init__(*args,**kwargs)
         self.playlist = list()
         self.playlist_pos = None
         self.wakeup.connect(self.on_event)
@@ -74,6 +72,11 @@ class Player(Q.QObject):
         return self
     def command(self,*args):
         self.m.command(*args)
+    def try_command(self, *args):
+        try:
+            self.m.command(*args)
+        except self.mpv.MPVError as e:
+            pass
     def set_property(self,prop,*args):
         self.m.set_property(prop,*args)
     def on_event(self):

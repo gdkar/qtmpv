@@ -1,6 +1,4 @@
 import sys
-if sys.version_info.major > 2:
-    basestring = str
 
 class ModuleProxy(object):
     def __init__(self,name):

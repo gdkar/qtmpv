@@ -1,9 +1,7 @@
 from PyQt5 import Qt as Q, QtWidgets as QW, QtGui as QG
-from playerwindow import PlayerWidget
+from playerwidget import PlayerWidget
 from player import Player
 import sys
-if sys.version_info.major > 2: basestring = str
-
 class TopWindow(Q.QMainWindow):
     def createPlaylistDock(self):
         from playlist import PlayList
@@ -27,7 +25,7 @@ class TopWindow(Q.QMainWindow):
         self.playlist.openFile()
         self.playlist.player = prev
     def __init__(self,n=2,*args,**kwargs):
-        super(self.__class__,self).__init__()
+        super().__init__()
         self.players = [Player() for _ in range(max(1,n))]
         self.createPlaylistDock()
         self.addDockWidget(Q.Qt.LeftDockWidgetArea,self.playlistdock)

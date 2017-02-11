@@ -1,4 +1,5 @@
 from modproxy import ModuleProxy
+
 class GLProxy(ModuleProxy):
     from contextlib import contextmanager
     @contextmanager
@@ -37,7 +38,7 @@ class GLProxy(ModuleProxy):
                 self.module.glDisable(flag)
     def begin(self,arg):
         if isinstance(arg,basestring):arg = getattr(self.module,'GL_{}'.format(arg.upper()))
-        if arg: 
+        if arg:
             self.module.glBegin(arg)
             return self.__apply_on_exit(self.module.glEnd)
     @contextmanager
