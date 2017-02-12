@@ -18,20 +18,34 @@ class PlayerWidget(Q.QWidget):
             if params['w'] and params['h']:
                 self.vwidth = params['w']
                 self.vheight = params['h']
-                self.resize(self.vwidth,self.vheight)
+                self.childwidget.setMinimumSize(Q.QSize(self.vwidth,self.vheight))
                 self.sized_once = True
+                self.show()
+                self.adjustSize()
+                self.window().update()
         except:
             self.sized_once = False
     def reconfig(self,width,height):
-        self.vwidth = width
-        self.vheight= height
-        if (not self.sized_once) and width:
-            self.resize(self.sizeHint())
-            self.sized_once = True
-    def sizeHint(self):
-        if not self.vwidth:
-            return QW.QWidget.sizeHint(self)
-        return Q.QSize(self.vwidth, self.vheight)
+        if width > 0 and width < 2**16:
+            self.vwidth = width
+        if height > 0 and height < 2**16:
+            self.vheight= height
+        if self.vwidth and self.vheight:
+            self.childwidget.setMinimumSize(Q.QSize(self.vwidth,self.vheight))
+#        if (not self.sized_once) and width:
+#            self.adjustSize()
+            self.adjustSize()
+            self.parent().adjustSize()
+            self.window().update()
+            if not self.sized_once:
+                self.sized_once = True
+                self.show()
+
+
+#    def sizeHint(self):
+#        if not self.vwidth or not self.vheight:
+#            return super().sizeHint()
+#        return Q.QSize(self.vwidth, self.vheight)
     @Q.pyqtSlot(object)
     def onVideo_paramsChanged(self,params):
         print("video params changed: ",repr(params))
@@ -85,23 +99,30 @@ class PlayerWidget(Q.QWidget):
         super().mousePressEvent(event)
     def __init__(self,player,parent, *args, **kwargs):
         super(self.__class__,self).__init__(parent)
+        policy = Q.QSizePolicy(Q.QSizePolicy.MinimumExpanding,Q.QSizePolicy.MinimumExpanding,Q.QSizePolicy.Frame)
+        self.setSizePolicy(policy)
         self.pitch_bend = 1.0
         self.player = player
-        self.parent = parent
+        self._parent = parent
         self.vwidth = None
         self.vheight = None
         self.childwin = Q.QWindow()
         self.childwidget = Q.QWidget.createWindowContainer(self.childwin)
+        policy = Q.QSizePolicy(Q.QSizePolicy.MinimumExpanding,Q.QSizePolicy.MinimumExpanding,Q.QSizePolicy.Label)
+#        policy.setRetainSizeWhenHidden(True)
+        self.childwidget.setSizePolicy(policy)
         self.layout = Q.QVBoxLayout()
-        self.layout.setContentsMargins(0, 0, 0, 0)
+#        self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.addWidget(self.childwidget)
         self.setLayout(self.layout)
 
         self.rate = None
         self.timeline = Q.QSlider(Q.Qt.Horizontal)
+        self.timeline.setSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Preferred)
         self.timeline_base = 1e9
         self.timeline.valueChanged.connect(self.onTimelineChanged)
         self.speed      = Q.QSlider(Q.Qt.Horizontal)
+        self.speed.setSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Preferred)
         self.speed_base = 1e9
         self.speed.setValue(self.speed_base)
         self.speed.setRange(16,2*self.speed_base)
@@ -155,7 +176,7 @@ class PlayerWidget(Q.QWidget):
 #        self.layout.addWidget(self.videocontainer)
         self.layout.addLayout(control_layout)
         self.layout.addWidget(self.timeline)
-        self.playlist = self.parent.playlist
+        self.playlist = self._parent.playlist
         self.requestFile.connect(self.onRequestFile)
 #        self.player.playlist_poschanged.connect(self.playlist.onplaylist_poschanged)
         self.player.init(self,*args,**kwargs)

@@ -20,14 +20,16 @@ class TopWindow(Q.QMainWindow):
         if where >= 0 and where < len(self.players):
             player = self.players[where]
         else:
-            self.players.append(Player())
-            player = self.players[-1]
+            player = Player(parent=self)
+            self.shutdown.connect(player.shutdown)
+            self.players.append(player)
             self.playlist.updateActions()
 
         w = player.widget
         if not w:
             self.makeWidgetFor(player)
         return player
+    shutdown = Q.pyqtSignal()
     def openFile(self, where = -1 ):
         prev = self.playlist.player
         player = self.getPlayerAt(where)
@@ -75,7 +77,9 @@ class TopWindow(Q.QMainWindow):
         winMenu.addAction("Ne&xt",mdiArea.activateNextSubWindow,Q.QKeySequence.NextChild)
         winMenu.addAction("&Prev",mdiArea.activatePreviousSubWindow,Q.QKeySequence.PreviousChild)
         if args:
-            self.players.append(Player())
+            p = Player(parent=self)
+            self.shutdown.connect(p.shutdown)
+            self.players.append(p)
             self.playlist.updateActions()
             self.makeWidgetFor(self.players[-1],*args)
 #        for p in self.players:
@@ -86,7 +90,11 @@ class TopWindow(Q.QMainWindow):
         if player:
             player.softvol = True
             pw = PlayerWidget(player,self,*args)
+            pw.childwin.resize(self.size())
             self.cascadeSubWindows.connect(pw.idealConfig)
             self.mdiArea.addSubWindow(pw)
+            pw.adjustSize()
+            pw.parent().adjustSize()
+            pw.parent().update()
 #            pw.setVisible(True)
             return pw

@@ -27,8 +27,10 @@ class PlayList(Q.QListWidget):
                 return
         where.command('loadfile',filePath, 'append-play')
         w = where.widget
-        if w:
-            w.show()
+        if w: w.sized_once = False
+#        if w:
+#            w.idealConfig()
+#            w.show()
         for idx, it in enumerate(where.m.playlist):
             if it['filename'] == filePath:
                 where.m.playlist_pos = idx
@@ -88,8 +90,9 @@ class PlayList(Q.QListWidget):
                     print("\n"+filePath+"\n")
                     self.player.command("loadfile",str(filePath),"append-play")
                 w = self.player.widget
-                if w:
-                    w.show()
+                if w:w.sized_once = False
+#                    w.idealConfig()
+#                    w.show()
 
     @Q.pyqtSlot(object)
     def onPlaylistChanged(self,playlist):

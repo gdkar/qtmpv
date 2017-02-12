@@ -3,9 +3,10 @@ from PyQt5 import Qt as Q, QtWidgets as QW, QtGui as QG
 import weakref
 import sys
 from playlist import PlayList, PlayListItem
+import mpv
 
 class Player(Q.QObject):
-    import mpv
+    mpv = __import__('mpv')
     novid = Q.pyqtSignal()
     hasvid = Q.pyqtSignal()
     playlistChanged = Q.pyqtSignal(object)
@@ -32,8 +33,17 @@ class Player(Q.QObject):
             return self.m.get_property('media-title')
         except self.mpv.MPVError as e:
             return None
+    def remove_m(self):
+        if self.m:
+            self.m.set_wakeup_callback(None)
+            self.m.shutdown()
+            del self.m
+            self.m = None
+    def shutdown(self):
+        self.remove_m()
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
+        kwargs.pop('parent',None)
         self.playlist = list()
         self.playlist_pos = None
         self._widget = None
@@ -47,6 +57,14 @@ class Player(Q.QObject):
             print("Failed creating context",ex)
             Q.qApp.exit(1)
             raise ex
+
+        self.destroyed.connect(self.remove_m)
+        self.m.set_wakeup_callback(self.wakeup.emit)
+        self.m.request_event(self.mpv.Events.property_change,True)
+        self.m.request_event(self.mpv.Events.video_reconfig,True)
+#        self.m.request_event(self.mpv.Events.file_loaded,True)
+        self.m.request_event(self.mpv.Events.log_message,True)
+
         self.m.observe_property('playlist')
         self.m.observe_property('playlist-pos')
         self.m.observe_property('percent-pos')
@@ -63,12 +81,23 @@ class Player(Q.QObject):
             return
         options,media = self.get_options(*args,**kwargs)
         self._widget = weakref.ref(widget)
+        if not self.m:
+            try:
+                self.m = self.mpv.Context('osc','input_default_bindings',**options)
+            except self.mpv.MPVError as ex:
+                print("Failed creating context",ex)
+                Q.qApp.exit(1)
+                raise ex
         wid = int(widget.childwin.winId())
         print("attempting to use window id ",wid)
         self.m.set_option('wid',wid)
         for option in options.items():
             self.m.set_option(*option)
-
+        self.m.set_wakeup_callback(self.wakeup.emit)
+#        self.m.request_event(self.mpv.Events.property_change,True)
+#        self.m.request_event(self.mpv.Events.video_reconfig,True)
+#        self.m.request_event(self.mpv.Events.file_loaded,True)
+#        self.m.request_event(self.mpv.Events.log_message,True)
         self.m.observe_property('playlist')
         self.m.observe_property('playlist-pos')
         self.m.observe_property('percent-pos')
@@ -82,7 +111,11 @@ class Player(Q.QObject):
 
         if media:
             self.m.playlist_pos =0
-        self.m.set_wakeup_callback(self.wakeup.emit)
+        try:
+            self.m.vid = 1
+        except:
+            pass
+
         return self
     def command(self,*args):
         self.m.command(*args)
@@ -93,16 +126,18 @@ class Player(Q.QObject):
             pass
     def set_property(self,prop,*args):
         self.m.set_property(prop,*args)
+    @Q.pyqtSlot()
     def on_event(self):
         while True:
             event = self.m.wait_event(0)
             if event is None:
                 print("Warning, received a null event.")
                 continue;
+
             if event.id == self.mpv.Events.none:
                 break;
             elif event.id == self.mpv.Events.shutdown:
-                Q.qApp.exit()
+#                Q.qApp.exit()
                 break;
             elif event.id == self.mpv.Events.idle:
                 self.novid.emit()
@@ -113,6 +148,7 @@ class Player(Q.QObject):
             elif (event.id == self.mpv.Events.end_file
                     or event.id == self.mpv.Events.video_reconfig):
                 try:
+                    self.m.vid = 1
                     self.reconfig.emit(
                         self.m.dwidth,
                         self.m.dheight
