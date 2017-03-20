@@ -40,7 +40,17 @@ class PlayerWidget(Q.QWidget):
             if not self.sized_once:
                 self.sized_once = True
                 self.show()
+    def closeEvent(self,evt):
+#        self.player.shutdown()
+        self.player.setParent(self)
+        self.novid()
 
+    @Q.pyqtSlot(int)
+    def onCrossfadeChanged(self, val):
+        if self.player.index %2:
+            self.player.m.volume = (100 - val) / 2
+        else:
+            self.player.m.volume = (100 + val)/2
 
 #    def sizeHint(self):
 #        if not self.vwidth or not self.vheight:
@@ -48,7 +58,7 @@ class PlayerWidget(Q.QWidget):
 #        return Q.QSize(self.vwidth, self.vheight)
     @Q.pyqtSlot(object)
     def onVideo_paramsChanged(self,params):
-        print("video params changed: ",repr(params))
+#        print("video params changed: ",repr(params))
         try:
             self.reconfig(params['w'],params['h'])
         except:
@@ -89,16 +99,17 @@ class PlayerWidget(Q.QWidget):
         self.pitch_bend = 1.
     @Q.pyqtSlot(object)
     def onRequestFile(self, path):
-        print("Setting playlist binding to ", self)
+#        print("Setting playlist binding to ", self)
         self.playlist.setPlayer(self.player)
         self.playlist.onRequestFile(path)
 
     def mousePressEvent(self,event):
-        print("Setting playlist binding to ", self)
+#        print("Setting playlist binding to ", self)
         self.playlist.setPlayer(self.player)
         super().mousePressEvent(event)
     def __init__(self,player,parent, *args, **kwargs):
-        super(self.__class__,self).__init__(parent)
+        super().__init__(parent)
+        self.setAttribute(Q.Qt.WA_DeleteOnClose)
         policy = Q.QSizePolicy(Q.QSizePolicy.MinimumExpanding,Q.QSizePolicy.MinimumExpanding,Q.QSizePolicy.Frame)
         self.setSizePolicy(policy)
         self.pitch_bend = 1.0

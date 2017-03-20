@@ -16,7 +16,7 @@ from player import Player
 if __name__ == '__main__':
     app = Q.QApplication(sys.argv)
     player = Player()
-    win = TopWindow(2,*sys.argv[1:])
-    app.aboutToQuit.connect(win.shutdown)
+    win = TopWindow(*sys.argv[1:])
+    app.aboutToQuit.connect(win.close)
     win.show()
     app.exec_()
