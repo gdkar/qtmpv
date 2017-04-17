@@ -90,9 +90,9 @@ class Player(Q.QObject):
             print("Failed creating context",ex)
             Q.qApp.exit(1)
             raise ex
-        self.m.set_property('af','rubberband=channels=apart:pitch=speed:transients=smooth')
+#        self.m.set_property('af','rubberband=channels=apart:pitch=speed:transients=smooth')
         self.destroyed.connect(self.shutdown,Q.Qt.DirectConnection)
-        self.m.set_wakeup_callback(self.wakeup.emit)
+        self.m.set_wakeup_callback(self.wakeup.emit,thread=False)
         self.m.request_event(self.mpv.Events.property_change,True)
         self.m.request_event(self.mpv.Events.video_reconfig,True)
         self.m.request_event(self.mpv.Events.file_loaded,True)
@@ -146,7 +146,7 @@ class Player(Q.QObject):
                     break
                 except self.mpv.MPVError as e:
                     print(e,*option)
-        self.m.set_wakeup_callback(self.wakeup.emit)
+        self.m.set_wakeup_callback(self.wakeup.emit,thread=False)
         self.m.request_event(self.mpv.Events.property_change,True)
         self.m.request_event(self.mpv.Events.video_reconfig,True)
 #        self.m.request_event(self.mpv.Events.file_loaded,True)
@@ -178,47 +178,40 @@ class Player(Q.QObject):
 
     def set_property(self,prop,*args):
         self.m.set_property(prop,*args)
+
     @Q.pyqtSlot()
     def on_event(self):
-#        while True:
-        retrigger = True
         m = self.m
         if not m:
             return
         event = m.wait_event(0)
         if event is None:
             print("Warning, received a null event.")
-            retrigger = False
-#            continue;
-
-        if event.id == self.mpv.Events.none:
-            retrigger = False
-#            break;
-
-        elif event.id == self.mpv.Events.shutdown:
-#                self.wakeup.disconnect()
-            print("on_event -> shutdown")
-            self.just_die.emit()
-        elif event.id == self.mpv.Events.idle:          self.novid.emit()
-        elif event.id == self.mpv.Events.start_file:    self.hasvid.emit()
-        elif event.id == self.mpv.Events.log_message:   print(event.data.text,)
-        elif (event.id == self.mpv.Events.end_file
-                or event.id == self.mpv.Events.video_reconfig):
-            try:
-                self.m.vid = 1
-                self.reconfig.emit( self.m.dwidth, self.m.dheight )
-            except self.mpv.MPVError as ex:
-                self.reconfig.emit(None,None)
-        elif event.id == self.mpv.Events.property_change:
-            name = event.data.name.replace('-','_')
-            if hasattr(self,name+'Changed'):
-                prop_changed = getattr(self,name+'Changed')
-                if(hasattr(prop_changed,'emit')):
-                    setattr(self,name,event.data.data)
-                    prop_changed.emit(event.data.data)
-                elif callable(prop_changed):
-                    prop_changed(event.data.data)
-            elif event.data.name == 'fullscreen':
-                pass
-        if retrigger:
+        elif event.id is self.mpv.Events.none:
+            pass
+        else:
+            if event.id is self.mpv.Events.shutdown:
+                print("on_event -> shutdown")
+                self.just_die.emit()
+            elif event.id is self.mpv.Events.idle:          self.novid.emit()
+            elif event.id is self.mpv.Events.start_file:    self.hasvid.emit()
+            elif event.id is self.mpv.Events.log_message:   print(event.data.text,)
+            elif (event.id is self.mpv.Events.end_file
+                    or event.id is self.mpv.Events.video_reconfig):
+                try:
+                    self.m.vid = 1
+                    self.reconfig.emit( self.m.dwidth, self.m.dheight )
+                except self.mpv.MPVError as ex:
+                    self.reconfig.emit(None,None)
+            elif event.id is self.mpv.Events.property_change:
+                name = event.data.name.replace('-','_')
+                if hasattr(self,name+'Changed'):
+                    prop_changed = getattr(self,name+'Changed')
+                    if(hasattr(prop_changed,'emit')):
+                        setattr(self,name,event.data.data)
+                        prop_changed.emit(event.data.data)
+                    elif callable(prop_changed):
+                        prop_changed(event.data.data)
+                elif event.data.name == 'fullscreen':
+                    pass
             self.wakeup.emit()
