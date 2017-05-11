@@ -8,7 +8,8 @@ if sys.version_info.major > 2:
     basestring = str
 from modproxy import ModuleProxy
 from glproxy  import gl, glx
-from PyQt5 import Qt as Q, QtWidgets as QW, QtGui as QG
+from qtproxy import Q, QW, QG
+#from PyQt5 import Qt as Q, QtWidgets as QW, QtGui as QG
 
 from topwindow import TopWindow
 from player import Player

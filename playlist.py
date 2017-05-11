@@ -90,8 +90,8 @@ class PlayList(Q.QListWidget):
             self.player.playlistChanged.emit(self.player.m.playlist)
 
     def openFileNear(self):
-#        if not self.player:
-#            self.player = self.parent.getPlayerAt(-1)
+        if not self.player:
+            self.player = self.parent.getPlayerAt(-1)
         ci = self.currentItem()
         if ci and ci.path:
             filePath = str(ci.path)
@@ -121,8 +121,8 @@ class PlayList(Q.QListWidget):
         if fileDialog.exec():
             if fileDialog.selectedFiles():
                 if not self.player:
-                    return
-#                    self.player = self._parent.getPlayerAt(-1)
+#                    return
+                    self.player = self._parent.getPlayerAt(-1)
                 for filePath in fileDialog.selectedFiles():
                     print("\n"+filePath+"\n")
                     self.player.command("loadfile",str(filePath),"append-play")

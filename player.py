@@ -92,7 +92,7 @@ class Player(Q.QObject):
             raise ex
 #        self.m.set_property('af','rubberband=channels=apart:pitch=speed:transients=smooth')
         self.destroyed.connect(self.shutdown,Q.Qt.DirectConnection)
-        self.m.set_wakeup_callback(self.wakeup.emit,thread=False)
+        self.m.set_wakeup_callback(self.wakeup.emit)
         self.m.request_event(self.mpv.Events.property_change,True)
         self.m.request_event(self.mpv.Events.video_reconfig,True)
         self.m.request_event(self.mpv.Events.file_loaded,True)
@@ -146,7 +146,7 @@ class Player(Q.QObject):
                     break
                 except self.mpv.MPVError as e:
                     print(e,*option)
-        self.m.set_wakeup_callback(self.wakeup.emit,thread=False)
+        self.m.set_wakeup_callback(self.wakeup.emit)
         self.m.request_event(self.mpv.Events.property_change,True)
         self.m.request_event(self.mpv.Events.video_reconfig,True)
 #        self.m.request_event(self.mpv.Events.file_loaded,True)
