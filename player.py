@@ -12,9 +12,9 @@ class Player(Q.QObject):
         ,'input_vo_keyboard':True
         ,'gapless_audio':True
         ,'osc':False
-        ,'keep-open':False
+        ,'keep-open':True
 #        ,'load_scripts':True
-#        ,'ytdl':True
+        ,'ytdl':True
           }
     novid = Q.pyqtSignal()
     hasvid = Q.pyqtSignal()
@@ -27,6 +27,7 @@ class Player(Q.QObject):
     video_paramsChanged = Q.pyqtSignal(object)
     wakeup = Q.pyqtSignal()
     just_die = Q.pyqtSignal()
+
     @staticmethod
     def get_options(*args,**kwargs):
         options = kwargs
@@ -84,6 +85,10 @@ class Player(Q.QObject):
         options = self.base_options
         new_options,media = self.get_options(*args ,**kwargs)
         options.update(new_options)
+        options['hwdec'] = 'vaapi'
+        options['opengl-hwdec-interop'] = 'vaapi-glx'
+        options['vo'] = 'vaapi'
+        options['interpolation'] = 'yes'
         try:
             self.m = self.mpv.Context( **options)
         except self.mpv.MPVError as ex:
@@ -93,10 +98,10 @@ class Player(Q.QObject):
 #        self.m.set_property('af','rubberband=channels=apart:pitch=speed:transients=smooth')
         self.destroyed.connect(self.shutdown,Q.Qt.DirectConnection)
         self.m.set_wakeup_callback(self.wakeup.emit)
-        self.m.request_event(self.mpv.Events.property_change,True)
-        self.m.request_event(self.mpv.Events.video_reconfig,True)
-        self.m.request_event(self.mpv.Events.file_loaded,True)
-        self.m.request_event(self.mpv.Events.log_message,True)
+        self.m.request_event(self.mpv.EventType.property_change,True)
+        self.m.request_event(self.mpv.EventType.video_reconfig,True)
+        self.m.request_event(self.mpv.EventType.file_loaded,True)
+        self.m.request_event(self.mpv.EventType.log_message,True)
 
         self.m.observe_property('playlist')
         self.m.observe_property('playlist-pos')
@@ -126,8 +131,10 @@ class Player(Q.QObject):
                 print("Failed creating context",ex)
                 Q.qApp.exit(1)
                 raise ex
-        self.m.set_property('af','rubberband=channels=apart:pitch=speed:transients=smooth')
+#        self.m.set_property('af','rubberband=channels=apart:pitch=speed:transients=smooth')
         self.m.set_log_level('terminal-default')
+#        self.m.msg_level='all=status'
+#        self.m.msg_module=True
         childwin = widget.childwin
         wid = int(childwin.winId())
         print("attempting to use window id ",wid)
@@ -147,10 +154,10 @@ class Player(Q.QObject):
                 except self.mpv.MPVError as e:
                     print(e,*option)
         self.m.set_wakeup_callback(self.wakeup.emit)
-        self.m.request_event(self.mpv.Events.property_change,True)
-        self.m.request_event(self.mpv.Events.video_reconfig,True)
-#        self.m.request_event(self.mpv.Events.file_loaded,True)
-        self.m.request_event(self.mpv.Events.log_message,True)
+        self.m.request_event(self.mpv.EventType.property_change,True)
+        self.m.request_event(self.mpv.EventType.video_reconfig,True)
+#        self.m.request_event(self.mpv.EventType.file_loaded,True)
+        self.m.request_event(self.mpv.EventType.log_message,True)
 
         self.m.observe_property('playlist')
         self.m.observe_property('playlist-pos')
@@ -173,7 +180,7 @@ class Player(Q.QObject):
         self.m.command(*args)
 
     def try_command(self, *args):
-        try: self.m.command(*args)
+        try: self.m.command(*args,_async=True)
         except self.mpv.MPVError: pass
 
     def set_property(self,prop,*args):
@@ -187,23 +194,23 @@ class Player(Q.QObject):
         event = m.wait_event(0)
         if event is None:
             print("Warning, received a null event.")
-        elif event.id is self.mpv.Events.none:
+        elif event.id is self.mpv.EventType.none:
             pass
         else:
-            if event.id is self.mpv.Events.shutdown:
+            if event.id is self.mpv.EventType.shutdown:
                 print("on_event -> shutdown")
                 self.just_die.emit()
-            elif event.id is self.mpv.Events.idle:          self.novid.emit()
-            elif event.id is self.mpv.Events.start_file:    self.hasvid.emit()
-            elif event.id is self.mpv.Events.log_message:   print(event.data.text,)
-            elif (event.id is self.mpv.Events.end_file
-                    or event.id is self.mpv.Events.video_reconfig):
+            elif event.id is self.mpv.EventType.idle:          self.novid.emit()
+            elif event.id is self.mpv.EventType.start_file:    self.hasvid.emit()
+            elif event.id is self.mpv.EventType.log_message:   print(event.data.text,)
+            elif (event.id is self.mpv.EventType.end_file
+                    or event.id is self.mpv.EventType.video_reconfig):
                 try:
                     self.m.vid = 1
                     self.reconfig.emit( self.m.dwidth, self.m.dheight )
                 except self.mpv.MPVError as ex:
                     self.reconfig.emit(None,None)
-            elif event.id is self.mpv.Events.property_change:
+            elif event.id is self.mpv.EventType.property_change:
                 name = event.data.name.replace('-','_')
                 if hasattr(self,name+'Changed'):
                     prop_changed = getattr(self,name+'Changed')

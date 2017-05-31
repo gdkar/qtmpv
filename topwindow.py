@@ -1,6 +1,7 @@
 from PyQt5 import Qt as Q, QtWidgets as QW, QtGui as QG
 from playerwidget import PlayerWidget
-from player import Player
+from av_player import AVPlayer, CtrlPlayer, AVFlatPropertyModel
+from av_propertymodel import AVTreePropertyModel
 import sys
 class TopWindow(Q.QMainWindow):
     crossfadeChanged = Q.pyqtSignal(int)
@@ -12,6 +13,23 @@ class TopWindow(Q.QMainWindow):
         self.playlistdock.setWindowTitle("Playlist")
         self.playlistdock.setFeatures(QW.QDockWidget.DockWidgetFloatable| QW.QDockWidget.DockWidgetMovable)
         self.playlistdock.setWidget(self.playlist)
+
+#        from playlist import PlayList
+#        self.playlist = PlayList(self, None)
+#        self.propertydock = Q.QDockWidget()
+#        self.propertydock.setWindowTitle("Properties")
+#        self.propertydock.setFeatures(Q.QDockWidget.DockWidgetFloatable| Q.QDockWidget.DockWidgetMovable)
+#        self.propertyview = Q.QTableView(self.propertydock)
+#        self.propertymodel= None
+##        self.propertyview.setModel(self.propertymodel)
+#        def set_propertymodel(player):
+#            if player and player._property_model:
+#                self.propertyview.setModel(player._property_model)
+#        self.playlist.playerChanged.connect(set_propertymodel)
+#        self.propertydock.setWidget(self.propertyview)
+#        self.propertydock.show()
+#        self.playlistdock.setWidget(self.playlist)
+
     def onCrossfadeChanged(self, cross):
         pass
 #        self.players[0].m.volume = (100.- cross)/2
@@ -24,27 +42,22 @@ class TopWindow(Q.QMainWindow):
         if where >= 0:
             for p in self.players:
                 if p.index == where:
-                    player = p
-                    if p.widget and p.m:
-                        return p
-                    break
+                    return p
+#                    player = p
+#                    if p.m:
+#                        return p
+#                    if p.widget and p.m:
+#                        return p
+#                    break
+#        if player is None:
+#            for p in self.players:
+#                if not p.widget or p.index < 0:
+#                    player = p
+#                    player.index = self.next_id
+#                    self.next_id+=1
+#                    break
         if player is None:
-            for p in self.players:
-                if not p.widget or p.index < 0:
-                    player = p
-                    player.index = self.next_id
-                    self.next_id+=1
-                    break
-        if player is None:
-            player = Player(parent=self)
-            player.index = self.next_id
-            self.next_id += 1
-
-            self.shutdown.connect(player.shutdown,Q.Qt.DirectConnection)
-#            self.players.append(player)
-
-        if not player.widget:
-            self.makeWidgetFor(player)
+            player = self.makeWidgetFor()
 
         self.playlist.updateActions()
 
@@ -67,9 +80,10 @@ class TopWindow(Q.QMainWindow):
         self.playlist.player = prev
 
     cascadeSubWindows = Q.pyqtSignal()
+
     @property
     def players(self):
-        return self.findChildren(Player)
+        return self.findChildren(AVPlayer)
 
     childChanged = Q.pyqtSignal(object)
 
@@ -87,6 +101,7 @@ class TopWindow(Q.QMainWindow):
 
         self.createPlaylistDock()
         self.addDockWidget(Q.Qt.LeftDockWidgetArea,self.playlistdock)
+#        self.addDockWidget(Q.Qt.BottomDockWidgetArea,self.propertydock)
 
         self.playlistdock.fileMenu = self.menuBar().addMenu("&File")
         fileMenu = self.playlistdock.fileMenu
@@ -119,30 +134,42 @@ class TopWindow(Q.QMainWindow):
         winMenu.addAction("&Prev",mdiArea.activatePreviousSubWindow,Q.QKeySequence.PreviousChild)
         mdiArea.subWindowActivated.connect(lambda *x: self.playlist.setPlayer(mdiArea.activeSubWindow()))
         self.destroyed.connect(self.shutdown,Q.Qt.DirectConnection)
-        self._options,media = Player.get_options(*args)
+        self._options,media = AVPlayer.get_options(*args)
 #        if media:
 #            for item in media:
 #                self.getPlayer(0).getPlayer
+        p = self.getPlayerAt(-1)
+        self.playlist.setPlayer(p)
         if media:
-            p = self.getPlayerAt(-1)
-            self.playlist.player = p
             self.playlist.updateActions()
 #            self.makeWidgetFor(p,*args,**kwargs)
             list(map(self.playlist.onRequestFile,media))
 
-    def makeWidgetFor(self,player,*args, **kwargs):
-        if player:
-            player.softvol = True
-            for option in self._options.items():
-                player.m.set_option(*option)
-            pw = PlayerWidget(player,self,*args, **kwargs)
-            pw.childwin.resize(self.size())
-            self.cascadeSubWindows.connect(pw.idealConfig)
-            self.crossfadeChanged.connect(pw.onCrossfadeChanged)
-            self.mdiArea.addSubWindow(pw)
-            pw.adjustSize()
-            pw.parent().adjustSize()
-            pw.parent().update()
-            pw.destroyed.connect(pw.parent().close,Q.Qt.DirectConnection)
-#            pw.setVisible(True)
-            return pw
+    def makeWidgetFor(self,*args, **kwargs):
+#        player.softvol = True
+#        for option in self._options.items():
+#            player.m.set_option(*option)
+#        pw = PlayerWidget(player,self,*args, **kwargs)
+        tw = Q.QTabWidget(parent=self)
+        cw = CtrlPlayer(*args, parent=None, **kwargs)
+        tw.addTab(cw,"video")
+
+        cw.childwidget.resize(self.size())
+        player = cw.childwidget
+        player._property_model = AVTreePropertyModel(player=player,parent=player)
+        tv = Q.QTreeView()
+        tv.setModel(player._property_model)
+        tw.addTab(tv,"properties")
+
+        player.index = self.next_id
+        player._playlist = self.playlist
+        self.next_id += 1
+#        self.cascadeSubWindows.connect(cw.idealConfig)
+#        self.crossfadeChanged.connect(cw.onCrossfadeChanged)
+        self.mdiArea.addSubWindow(tw)
+        tw.adjustSize()
+        tw.parent().adjustSize()
+        tw.parent().update()
+        tw.destroyed.connect(tw.parent().close,Q.Qt.DirectConnection)
+        tw.setVisible(True)
+        return player

@@ -89,10 +89,10 @@ class PlayerObject(Q.QOpenGLWidget):
         self.mpv_event.connect(self.on_event,Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
         self.mpv_frame.connect(self.update,  Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
         self.m.set_wakeup_callback(self.mpv_event.emit)
-        self.m.request_event(self.mpv.Events.property_change,True)
-        self.m.request_event(self.mpv.Events.video_reconfig,True)
-        self.m.request_event(self.mpv.Events.file_loaded,True)
-        self.m.request_event(self.mpv.Events.log_message,True)
+        self.m.request_event(self.mpv.EventType.property_change,True)
+        self.m.request_event(self.mpv.EventType.video_reconfig,True)
+        self.m.request_event(self.mpv.EventType.file_loaded,True)
+        self.m.request_event(self.mpv.EventType.log_message,True)
 
         self.m.observe_property('playlist')
         self.m.observe_property('playlist-pos')
@@ -155,25 +155,25 @@ class PlayerObject(Q.QOpenGLWidget):
             event = m.wait_event(0)
             if event is None:
                 print("Warning, received a null event.")
-            elif event.id is self.mpv.Events.none:
+            elif event.id is self.mpv.EventType.none:
                 break
 #            break
             else:
                 self.evt_stats += 1
-                if event.id is self.mpv.Events.shutdown:
+                if event.id is self.mpv.EventType.shutdown:
                     print("on_event -> shutdown")
                     self.just_die.emit()
                     return
-                elif event.id is self.mpv.Events.idle:          self.novid.emit()
-                elif event.id is self.mpv.Events.start_file:    self.hasvid.emit()
-                elif event.id is self.mpv.Events.log_message:   print(event.data.text,)
-                elif (event.id is self.mpv.Events.end_file
-                        or event.id is self.mpv.Events.video_reconfig):
+                elif event.id is self.mpv.EventType.idle:          self.novid.emit()
+                elif event.id is self.mpv.EventType.start_file:    self.hasvid.emit()
+                elif event.id is self.mpv.EventType.log_message:   print(event.data.text,)
+                elif (event.id is self.mpv.EventType.end_file
+                        or event.id is self.mpv.EventType.video_reconfig):
                     try:
                         self.reconfig.emit(self.m.dwidth, self.m.dheight)
                     except self.mpv.MPVError as ex:
                         pass
-                elif event.id is self.mpv.Events.property_change:
+                elif event.id is self.mpv.EventType.property_change:
                     name = event.data.name.replace('-','_')
                     data  = event.data.data
                     cached = self.ps_cache.get(name,None)

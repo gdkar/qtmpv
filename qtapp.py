@@ -136,26 +136,26 @@ class MPV(QObject):
     def handle_event(self):
         while True:
             event = self.m.wait_event(0)
-            if event.id  == mpv.Events.none:
+            if event.id  == mpv.EventType.none:
                 break
-            elif event.id == mpv.Events.shutdown:
+            elif event.id == mpv.EventType.shutdown:
                 qApp.exit()
                 break
-            elif event.id == mpv.Events.idle:
+            elif event.id == mpv.EventType.idle:
                 self.novid.emit()
-            elif event.id == mpv.Events.start_file:
+            elif event.id == mpv.EventType.start_file:
                 self.hasvid.emit()
-            elif event.id == mpv.Events.log_message:
+            elif event.id == mpv.EventType.log_message:
                 print(event.data.text, end='')
-            elif (event.id == mpv.Events.end_file
-             or event.id == mpv.Events.video_reconfig):
+            elif (event.id == mpv.EventType.end_file
+             or event.id == mpv.EventType.video_reconfig):
                 try:self.reconfig.emit(
                         self.m.get_property('dwidth'),
                         self.m.get_property('dheight')
                     )
                 except mpv.MPVError:
                     self.reconfig.emit(None, None)
-            elif event.id == mpv.Events.property_change:
+            elif event.id == mpv.EventType.property_change:
                 if event.data.name == 'playlist':
                     self.playlist = event.data.data
                     self.playlistchanged.emit()

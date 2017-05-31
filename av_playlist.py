@@ -2,42 +2,38 @@
 from PyQt5 import Qt as Q, QtWidgets as QW, QtGui as QG
 from functools import partial,partialmethod
 import sys
-import av_player
-import pathlib
+import player
 class PlayListItem(Q.QListWidgetItem):
     def __init__(self,parent, path,*args,**kwargs):
         super().__init__(parent, *args,**kwargs)
-        if path:
-            self.path = pathlib.Path(path)
-            self.setText(self.path.resolve().name)
-#        self.path = pathlib.Path(path) if path else None
-#        self.setText(posixpath.basename(self.path))
+        import posixpath
+        self.path = path
+        self.setText(posixpath.basename(self.path))
 
 class PlayList(Q.QListWidget):
     requestPlaylistPos = Q.pyqtSignal(object)
     requestFile = Q.pyqtSignal(object)
-    playerChanged = Q.pyqtSignal(object)
     def __loadfileAction(self, where):
         ci = self.currentItem()
         if not ci or not ci.path:
             return
-        filePath = ci.path
+        filePath = str(ci.path)
         print(filePath)
-        if not isinstance(where,av_player.AVPlayer):
+        if not isinstance(where,player.Player):
             where = self._parent.getPlayerAt(where)
-        for idx, it in enumerate(where.playlist.value()):
-            if filePath.samefile(it['filename']):
+        for idx, it in enumerate(where.m.playlist):
+            if it['filename'] == filePath:
                 where.m.playlist_pos = idx
                 return
-        where.command('loadfile',filePath.as_posix(), 'append-play')
-#        w = where.widget
-#        if w: w.sized_once = False
+        where.command('loadfile',filePath, 'append-play')
+        w = where.widget
+        if w: w.sized_once = False
 #        if w:
 #            w.idealConfig()
 #            w.show()
-        for idx, it in enumerate(where.playlist.value()):
-            if filePath.samefile(it['filename']):
-                where.playlist_pos.setValue(idx)
+        for idx, it in enumerate(where.m.playlist):
+            if it['filename'] == filePath:
+                where.m.playlist_pos = idx
                 return
     @property
     def players(self):
@@ -52,9 +48,11 @@ class PlayList(Q.QListWidget):
         self.setContextMenuPolicy(Q.Qt.ActionsContextMenu)
         self.updateActions()
 
-        if self.player and isinstance(self.player,av_player.AVPlayer):
-            self.player.playlist.valueChanged.connect(self.onPlaylistChanged)
-            self.player.playlist_pos.valueChanged.connect(self.onPlaylist_posChanged)
+        if self.player and isinstance(self.player,player.Player):
+            self.player.playlistChanged.connect(self.onPlaylistChanged)
+            self.player.playlist_posChanged.connect(self.onPlaylist_posChanged)
+
+
     def updateActions(self):
         acts = self.actions()
         for a in acts:
@@ -67,39 +65,36 @@ class PlayList(Q.QListWidget):
         a.triggered.connect(partial(self.__loadfileAction,-1))
         self.addAction(a)
         for p in self.players:
+            if not p.widget:
+                continue
             a = Q.QAction("Load to player {}".format(p.index),self)
             a.triggered.connect(partial(self.__loadfileAction,p))
             self.addAction(a)
-        self.playerChanged.emit(self.player)
 
     def setPlayer(self, p):
         if isinstance(p,Q.QMdiSubWindow):
             p = p.widget()
             if p:
-                p = p.findChild(av_player.AVPlayer)
-#            if p:
-#                p = p.player
-        if self.player is p:
-            return
+                p = p.player
         if self.player:
-            try: self.player.playlist.valueChanged.disconnect(self.onPlaylistChanged)
+            try: self.player.playlistChanged.disconnect(self.onPlaylistChanged)
             except: pass
-            try: self.player.playlist_pos.valueChanged.disconnect(self.onPlaylist_posChanged)
+            try: self.player.playlist_posChanged.disconnect(self.onPlaylist_posChanged)
             except: pass
 
         self.clear()
         self.player = p
         if p:
-            self.player.playlist.valueChanged.connect(self.onPlaylistChanged)
-            self.player.playlist_pos.valueChanged.connect(self.onPlaylist_posChanged)
-            self.player.playlist.valueChanged.emit(self.player.playlist.value())
-        self.playerChanged.emit(p)
+            self.player.playlistChanged.connect(self.onPlaylistChanged)
+            self.player.playlist_posChanged.connect(self.onPlaylist_posChanged)
+            self.player.playlistChanged.emit(self.player.m.playlist)
+
     def openFileNear(self):
         if not self.player:
             self.player = self.parent.getPlayerAt(-1)
         ci = self.currentItem()
         if ci and ci.path:
-            filePath = pathlib.Path(ci.path)
+            filePath = str(ci.path)
         else:
             filePath = None
         prev,self.player = self.player, None
@@ -131,8 +126,8 @@ class PlayList(Q.QListWidget):
                 for filePath in fileDialog.selectedFiles():
                     print("\n"+filePath+"\n")
                     self.player.command("loadfile",str(filePath),"append-play")
-#                w = self.player.widget
-#                if w:w.sized_once = False
+                w = self.player.widget
+                if w:w.sized_once = False
 #                    w.idealConfig()
 #                    w.show()
     def openUrl(self):
@@ -140,26 +135,23 @@ class PlayList(Q.QListWidget):
         if ok and urlPath:
             if not self.player:
 #                return
-                self.setPlayer(self._parent.makeWidgetFor(-1))
+                self.setPlayer(self._parent.getPlayerAt(-1))
             print("\n"+urlPath+"\n")
             self.player.command("loadfile",str(urlPath),"append-play")
-#            w = self.player.widget
-#            if w:w.sized_once = False
+            w = self.player.widget
+            if w:w.sized_once = False
 #                    w.idealConfig()
 #                    w.show()
     @Q.pyqtSlot(object)
     def onPlaylistChanged(self,playlist):
         for i, item in enumerate(playlist):
             existingitem = self.item(i)
-            if not existingitem or not existingitem.path.samefile(item['filename']):
+            if not existingitem or existingitem.path != item['filename']:
                 self.insertItem(i,PlayListItem(self, item['filename']))
 
-    @Q.pyqtSlot(object)
+    @Q.pyqtSlot(int)
     def onPlaylist_posChanged(self,playlist_pos):
-        if playlist_pos is not None:
-            self.setCurrentRow(playlist_pos)
-        else:
-            self.setCurrentRow(0)
+        self.setCurrentRow(playlist_pos)
 
     @Q.pyqtSlot(object)
     def onRequestFile(self,path):
@@ -167,5 +159,4 @@ class PlayList(Q.QListWidget):
 
     @Q.pyqtSlot("QListWidgetItem*")
     def on_clicked(self,item):
-        if self.player:
-            self.player.playlist_pos.setValue(self.row(item))
+        self.player.m.playlist_pos = self.row(item)

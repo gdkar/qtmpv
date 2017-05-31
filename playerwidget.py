@@ -66,7 +66,7 @@ class PlayerWidget(Q.QWidget):
     @Q.pyqtSlot(int)
     def onTimelineChanged(self,when):
         s = min(max(0.,when * 100./self.timeline_base),100.)
-        self.player.try_command("seek",s,"absolute-percent")
+        self.player.try_command("seek",s,"absolute-percent+keyframes")
 
     @Q.pyqtSlot(object)
     def onPercent_posChanged(self,percent_pos):
@@ -132,6 +132,9 @@ class PlayerWidget(Q.QWidget):
         self.timeline.setSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Preferred)
         self.timeline_base = 1e9
         self.timeline.valueChanged.connect(self.onTimelineChanged)
+        self.timeline.setRange(0,self.timeline_base)
+        self.timeline.setEnabled(True)
+
         self.speed      = Q.QSlider(Q.Qt.Horizontal)
         self.speed.setSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Preferred)
         self.speed_base = 1e9
@@ -141,8 +144,6 @@ class PlayerWidget(Q.QWidget):
         self.speed.valueChanged.connect(self.speedChanged)
         self.player.speedChanged.connect(self.onSpeedChanged)
         self.player.percent_posChanged.connect(self.onPercent_posChanged)
-        self.timeline.setRange(0,self.timeline_base)
-        self.timeline.setEnabled(True)
 
         play_button = Q.QPushButton("play/pause")
         play_button.clicked.connect(self.pause)
