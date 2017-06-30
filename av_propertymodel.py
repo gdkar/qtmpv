@@ -16,10 +16,11 @@ import mpv
 import av_player
 
 class TreeItem(object):
-    def __init__(self, name, player=None, parent=None):
-        self._parent= parent
+    def __init__(self, name, player=None, parent=None, model=None):
+        self._parent= weakref.ref(parent) if parent else None
         if parent is not None:
             parent.appendChild(self)
+        self._model = model
         self._name = name
         self._children   = list()
         self._player     = weakref.ref(player) if player else None
@@ -53,32 +54,119 @@ class TreeItem(object):
         if column is 0:
             return self._name
     def parent(self):
-        return self._parent
+        return self._parent()
     def row(self):
         if self._parent:
-            return self._parent._children.index(self)
+            try:
+                return self._parent._children.index(self)
+            except:
+                pass
         return 0
 
+class LitItem(TreeItem):
+    def __init__(self, name, val, player=None, parent=None,model=None):
+        super().__init__(name, player=player,parent=parent,model=model)
+        self._val = None
+        if isinstance(val, list):
+            for n,_sub in enumerate(val):
+                LitItem(name = name+'/{}'.format(n),val=_sub, player=player,parent=self, model=model)
+        elif isinstance(val, dict):
+            for k,v in val.items():
+                LitItem(name = name+'/{}'.format(k),val=v,player=player,parent=self,model=model)
+        else:
+            self._val = val
+
+    def setData(self, column, data):
+        return super().setData(column,data)
+
+    def data(self, column):
+        if column == 1:
+            return self._val
+
+        return super().data(column)
+
+    def columnCount(self):
+        return 2
+
 class LeafItem(TreeItem):
-    def __init__(self, name, attr, player=None, parent=None):
-        super().__init__(name, player, parent)
-        if isinstance(attr,str):
-            try:
-                attr = player.get_property(attr)
-            except:
-                attr = None
+    def __init__(self, name, attr, player=None, parent=None, model=None):
+        super().__init__(name, player, parent, model)
+        self._val = None
+        self._prop = None
         self._attr = attr
+        if isinstance(attr,av_player.AVProperty):
+            self._prop = attr
+            self._attr = self._prop.objectName()
+        else:
+            try:
+                self._prop = player.get_property(attr)
+                if not isinstance(self._prop, av_player.AVProperty):
+                    self._prop = None
+                else:
+                    print(self._prop)
+            except:
+                self._prop  = None
+        if self._prop is not None:
+            self._prop.valueChanged.connect(self._update)
+#            if model is not None:
+#                index = model.indexForItem(item = self, column=1)
+#                self._prop.valueChanged.connect(lambda:model.dataChanged.emit(index,index))
+
+        self._attr = attr
+    def _update(self):
+        if self._prop is None:
+            if self.player and self._attr:
+                try:
+                    self._prop = self.player.get_property(self._attr)
+                    print(self._prop)
+#                    else:
+#                        print(self._prop)
+                except:
+                    pass
+#                    self._prop  = None
+            if self._prop is not None:
+                self._prop.valueChanged.connect(self._update)
+#                    self._prop.valueChanged.connect(lambda:model.dataChanged.emit(index,index))
+        if self._prop:
+            _val = self._prop.value()
+        else:
+            return
+        if _val != self._val:
+            self._val = _val
+
+            has_children = self._model and self._children
+            if has_children:
+                self._model.layoutAboutToBeChanged.emit()
+            self._children.clear()
+            if isinstance(_val, list):
+                for n,_sub in enumerate(_val):
+                    LitItem(name = self._name+'/{}'.format(n),val=_sub, player=self.player,parent=self, model=self._model)
+            elif isinstance(_val, dict):
+                for k,v in _val.items():
+                    LitItem(name = self._name+'/{}'.format(k),val=v,player=self.player,parent=self,model=self._model)
+            if has_children:
+                self._model.layoutChanged.emit()
+            elif self._model:
+                model = self._model
+                index_hi = model.indexForItem(item = self, column=0)
+                index_lo = model.index(row = self.row() + 1, column=1,parent=model.parent(index_hi))
+                self._model.dataChanged.emit(index_hi,index_lo)
+
+
     def setData(self, column, data):
         if column == 1 and self._attr:
             try:
                 self._attr.setValue(data)
                 return True
-            except:pass
+            except:
+                pass
         return super().setData(column,data)
+
     def data(self, column):
         if column == 1:
             if self._attr:
                 return self._attr.value()
+
         return super().data(column)
     def columnCount(self):
         return 2
@@ -139,15 +227,23 @@ class AVTreePropertyModel(Q.QAbstractItemModel):
     def indexForItem(self, item, column = 0):
         return self.createIndex(item.row(), column, item)
     def parent(self, index):
+        if not index:
+            return Q.QModelIndex()
         if not index.isValid():
             return Q.QModelIndex()
         childItem = index.internalPointer()
+        if not childItem:
+            return Q.QModelIndex()
         parentItem = childItem.parent()
+        if not parentItem:
+            return Q.QModelIndex()
         if parentItem is self._rootItem:
             return Q.QModelIndex()
         return self.indexForItem(parentItem)
 
     def rowCount(self, parent):
+        if parent is None:
+            return
         if parent.column() > 0:
             return 0
         if parent.isValid():
@@ -169,7 +265,7 @@ class AVTreePropertyModel(Q.QAbstractItemModel):
             root = None
             if len(parts) == 1:
                 part = parts[0]
-                root = LeafItem(name=part.objectName(), attr=part, player=player,parent=proot)
+                root = LeafItem(name=part.objectName(), attr=part, player=player,parent=proot, model=self)
                 return
             if len(parts)==0:
                 return
@@ -183,7 +279,7 @@ class AVTreePropertyModel(Q.QAbstractItemModel):
                 common = len('-'.join(parts[0].objectName().split('-')[:common]))
             prefix = parts[0].objectName()[:common]
             if not root:
-                root = TreeItem(name=prefix,player=player,parent=proot)
+                root = TreeItem(name=prefix,player=player,parent=proot, model=self)
             sub = dict()
             for part in parts:
                 name = part.objectName()
@@ -200,43 +296,3 @@ class AVTreePropertyModel(Q.QAbstractItemModel):
         parts = [_ for _ in parts if _ is not None]
 
         layer(parts, self._rootItem, None )
-class PropertyGroup:
-    def __init__(self, prefix, suffixes, player, parent=None):
-        def combine(*args):
-            return '-'.join(filter(None, args))
-        if parent is not None:
-            self._parent = weakref.ref(parent)
-        else:
-            self._parent = None
-        self._player = weakref.ref(player)
-        self._prefix = prefix
-        self._children = list()
-        self._property = None
-        self._name = _name = ''
-        if not suffixes:
-            try:
-                self._property = getattr(player, player.m.attr_name(prefix))
-            except:
-                pass
-            return
-        kids = {'': set(suffixes)}
-        vals = dict()
-        while len(kids) == 1:
-            k, suffs = next(iter(kids.items()))
-            kids = dict()
-#            if not vals:
-            prefix = combine(prefix,k)
-            _name = combine(_name, k)
-            k = ''
-            for s in suffs:
-                pre, _, suf = s.partition('-')
-                if suf:
-                    kids.setdefault(combine(k,pre), set()).add(suf)
-                else:
-                    full = combine(prefix,k, pre)
-                    vals[combine(k,pre)] = set()
-        self._prefix = prefix
-        self._name   = _name
-        kids.update(vals)
-        for k,v in sorted(kids.items()):
-            self._children.append(PropertyGroup(combine(prefix, k), v, player, parent=self))

@@ -134,16 +134,36 @@ class TopWindow(Q.QMainWindow):
         winMenu.addAction("&Prev",mdiArea.activatePreviousSubWindow,Q.QKeySequence.PreviousChild)
         mdiArea.subWindowActivated.connect(lambda *x: self.playlist.setPlayer(mdiArea.activeSubWindow()))
         self.destroyed.connect(self.shutdown,Q.Qt.DirectConnection)
+        self._timer = Q.QTimer()
+        self._timer.setInterval(int(1000/30))
+        self._timer.setTimerType(Q.Qt.PreciseTimer)
+        self._timer.timeout.connect(self.update)
+        self._timer.start()
+        frate = kwargs.pop('forcerate',None)
+        if frate:
+            try:
+                self.forcedFrameRate = float(frate)
+            except:
+                pass
         self._options,media = AVPlayer.get_options(*args)
 #        if media:
 #            for item in media:
 #                self.getPlayer(0).getPlayer
+
+
         p = self.getPlayerAt(-1)
         self.playlist.setPlayer(p)
         if media:
             self.playlist.updateActions()
 #            self.makeWidgetFor(p,*args,**kwargs)
             list(map(self.playlist.onRequestFile,media))
+    @property
+    def forcedFrameRate(self):
+        return 10000 / self._timer.interval()
+
+    @forcedFrameRate.setter
+    def forcedFrameRate(self, val):
+       self._timer.setInterval(int(1000/val))
 
     def makeWidgetFor(self,*args, **kwargs):
 #        player.softvol = True
@@ -152,6 +172,7 @@ class TopWindow(Q.QMainWindow):
 #        pw = PlayerWidget(player,self,*args, **kwargs)
         tw = Q.QTabWidget(parent=self)
         cw = CtrlPlayer(*args, parent=None, **kwargs)
+        self._timer.timeout.connect(cw.update)
         tw.addTab(cw,"video")
 
         cw.childwidget.resize(self.size())

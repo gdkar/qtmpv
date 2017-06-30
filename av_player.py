@@ -1,7 +1,9 @@
 #! /usr/bin/env python
-
+import signal
+from interruptingcow import SignalWakeupHandler
 import weakref
 import argparse
+import shlex
 import functools
 import pathlib
 import ctypes
@@ -12,10 +14,13 @@ import pprint
 import time
 import collections
 from qtproxy import Q
+import ModernGL
 
 import av
 import mpv
 from av_propertymodel import *
+import qtconsole
+
 class AVFlatPropertyModel(Q.QAbstractTableModel):
 
     Mimetype = 'application/vnd.row.list'
@@ -153,21 +158,39 @@ class AVPlayer(Q.QOpenGLWidget):
 
     base_options = {
          'input-default-bindings':True
-        ,'input_vo_keyboard':True
+#        ,'input_vo_keyboard':True
         ,'gapless_audio':True
-        ,'osc':True
+        ,'osc':False
+        ,'osd-level':3
         ,'keep-open':False
         ,'load_scripts':False
         ,'ytdl':True
         ,'force-window':True
         ,'vo':'opengl-cb'
+#        ,'opengl-fbo-frmat':'rgba32f'
+        ,'alpha':True
+#        ,'opengl-es':False
+        ,'opengl-swapinterval':1
+        ,'opengl-backend':'x11'
+        ,'video-sync':'display-resample-desync'
+        ,'display-sync-active':True
+        ,'display-fps':60.0
+        ,'interpolation-threshold':1e-12
+        ,'interpolation':True
+        ,'vo-vaapi-scaling':'nla'
+        ,'vo-vaapi-scaled-osd':True
+        ,'vo-vdpau-hqscaling':9
+        ,'vo-vdpau-deint':True
+#        ,'vd-lavc-fast':True
+#        ,'vd-lavc-show-all':True
         ,'hr-seek':True
         ,'hwdec-preload':True
-        ,'hwdec':'vdpau'
-        ,'opengl-hwdec-interop':'vdpau-glx'
+        ,'hwdec':'vaapi'
+        ,'opengl_hwdec_interop':'vaapi-glx'
 #        , 'player-operation-mode':'pseudo-gui'
           }
-
+    _reportFlip = False
+    _externalDrive = False
     novid = Q.pyqtSignal()
     hasvid = Q.pyqtSignal()
 #    playlistChanged = Q.pyqtSignal(object)
@@ -231,19 +254,24 @@ class AVPlayer(Q.QOpenGLWidget):
 
     def __init__(self, *args,fp=None, **kwargs):
         super().__init__(*args,**kwargs)
+
+        fmt = Q.QSurfaceFormat.defaultFormat()
+        fmt.setVersion(4,5)
+        fmt.setProfile(Q.QSurfaceFormat.CoreProfile)
+        fmt.setSamples(4)
+        self.setFormat(fmt)
+        self.setMouseTracking(True)
         self.event_handler_cache = weakref.WeakValueDictionary()
         self.prop_bindings = dict()
         import locale
         locale.setlocale(locale.LC_NUMERIC,'C')
-        options = self.base_options
+        options = self.base_options.copy()
         new_options,media = self.get_options(*args ,**kwargs)
         options.update(new_options)
-#        options['hr-seek'] = 'yes'
-#        options['hwdec'] = 'vdpau'
-#        options['hwdec-preload'] = True
-#        options['vo'] = 'opengl-cb'
-#        options['opengl_hwdec_interop']='vdpau-glx'
-        options['msg-level'] = 'all=status'
+        options['msg-level'] = 'all=status,vd=debug,hwdec=debug,vo=debug,video=v,opengl=debug'
+#        options['hwdec'] = 'vaapi-copy'
+#        options['opengl_hwdec_interop'] = 'vaapi-egl'
+
         self.new_frame = False
 
         self.m= self.mpv.Context(**options)
@@ -264,20 +292,25 @@ class AVPlayer(Q.QOpenGLWidget):
         self.setMinimumSize(self.img_width,self.img_height)
         self.tex_id = 0
         self.fbo = None
-        self.width = self.img_width
-        self.height = self.img_height
+        self._width = self.img_width
+        self._height = self.img_height
         if isinstance(fp, pathlib.Path):
             fp = fp.resolve().absolute().as_posix()
         elif isinstance(fp, Q.QFileInfo):
             fp = fp.canonicalFilePath()
         elif isinstance(fp, Q.QUrl):
             fp = fp.toString()
+        Q.QTimer.singleShot(0, self.update)
         if fp:
-            self.m.command('loadfile',fp,'append-play',_async=True)
+            Q.QTimer.singleShot(0,(lambda : self.m.command('loadfile',fp,'append',_async=True)))
 
     def command(self,*args, **kwargs):
         self.m.command(*args, **kwargs)
-
+    def command_string(self, cmdlist):
+        try:
+            self.m.command_string(cmdlist)
+        except:
+            pass
     def try_command(self, *args, **kwargs):
         kwargs.setdefault('_async',True)
         try:
@@ -326,7 +359,8 @@ class AVPlayer(Q.QOpenGLWidget):
             if event.reply_userdata:
                 try:
                     event.reply_userdata(data)
-                except: pass
+                except:
+                    pass
             elif event.data.name == 'fullscreen':
                 pass
 
@@ -349,44 +383,154 @@ class AVPlayer(Q.QOpenGLWidget):
                     print(e)
     @Q.pyqtSlot()
     def onWakeup(self):
+#        if not self._externalDrive:
         self.update()
 
     def initializeGL(self):
         print('initialize GL')
-        self.vf = Q.QOpenGLContext.currentContext().versionFunctions(self.pfl)
+        self._vf = Q.QOpenGLContext.currentContext().versionFunctions(self.pfl)
         self.qctx = Q.QGLContext.currentContext()
-        def getprocaddr(name):
-            print(name)
-            fn = self.qctx.getProcAddress(name.decode('latin1'))
-            return fn
+        self.mctx = ModernGL.create_context()
 
+        def getprocaddr(name):
+#            print(name)
+#            return self.qctx.getProcAddress(name.decode('latin1'))
+            return self.mctx.mglo.get_proc_address(name.decode('latin1'))
         self.ogl = self.m.opengl_cb_context
         self.ogl.init_gl(getprocaddr,None)
 
         weakref.finalize(self, lambda:self.ogl.set_update_callback(None))
         self.wakeup.connect(self.onWakeup,Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
-        self.frameSwapped.connect(lambda:self.ogl.report_flip(self.m.time))
+        self.frameSwapped.connect(self.onFrameSwapped)
         self.ogl.set_update_callback(self.wakeup.emit)
 
+    @Q.pyqtSlot()
+    def onFrameSwapped(self):
+        if self.reportFlip:
+            self.ogl.report_flip(self.m.time)
+
+    @property
+    def reportFlip(self):
+        return self._reportFlip
+
+    @reportFlip.setter
+    def reportFlip(self, val):
+        val = bool(val)
+        if val == self._reportFlip:
+            return
+        if val and not self._reportFlip:
+            self._reportFlip = True
+        else:
+            raise AttributeError('cannot turn off flip reporting once it is turned on.')
+
+    @property
+    def externalDrive(self):
+        return self._externalDrive
+
+    @externalDrive.setter
+    def externalDrive(self, val):
+        self._externalDrive = bool(val)
+#        if val == self._externalDrive:
+#            return
+#        if val:
+#            self.wakeup.connect(self.onWakeup,Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
+#        else:
+#            self.wakeup.disconnect()
     def resizeGL(self, w, h):
-        self.width  = w
-        self.height = h
+        self._width  = w
+        self._height = h
 
     def paintGL(self):
-        self.ogl.draw(self.defaultFramebufferObject(),self.width,-self.height)
+        self.ogl.draw(self.defaultFramebufferObject(),self._width,-self._height)
 
-    @Q.pyqtSlot(object)
-    def onRequestFile(self, path):
-#        print("Setting playlist binding to ", self)
-        if self._playlist:
-            self._playlist.setPlayer(self)
-            self._playlist.onRequestFile(path)
 
-    def mousePressEvent(self,event):
+#    @Q.pyqtSlot(object)
+#    def onRequestFile(self, path):
 #        print("Setting playlist binding to ", self)
-        if self._playlist:
-            self._playlist.setPlayer(self)
-            super().mousePressEvent(event)
+#        if self._playlist:
+#            self._playlist.setPlayer(self)
+#            self._playlist.onRequestFile(path)
+#    def mousePressEvent(self,event):
+#        btn = 1 if (event.buttons() & Q.Qt.LeftButton) else 0
+#        self.m.command('mouse',event.x(),self._height-event.y(),btn, 'single',_async=True)
+#        event.ignore()
+#
+#    def mouseDoubleClickEvent(self,event):
+#        btn = 1 if (event.buttons() & Q.Qt.LeftButton) else 0
+#        self.m.command('mouse',event.x(),self._height-event.y(),btn, 'double',_async=True)
+#        event.ignore()
+
+#    def mouseMoveEvent(self,event):
+#        self.m.command('mouse',event.x(),event.y(),_async=True)
+#        event.ignore()
+
+#        print("Setting playlist binding to ", self)
+#        if self._playlist:
+#            self._playlist.setPlayer(self)
+#            super().mousePressEvent(event)
+class CmdLine(Q.QLineEdit):
+    submitted = Q.pyqtSignal(str)
+    historyPosChanged = Q.pyqtSignal(int)
+    historyChanged = Q.pyqtSignal()
+    historyAppended = Q.pyqtSignal(str)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._history = collections.deque()
+        self._history_pos = 0
+        self.historyAppended.connect(self.historyChanged)
+        self.returnPressed.connect(self.onReturnPressed)
+        self.returnPressed.connect(self.onReturnPressed)
+    def keyPressEvent(self, evt):
+        if evt.modifiers() ==  Q.Qt.ControlModifier:
+            if evt.key() == Q.Qt.Key_P:
+                if self.historyPos+ 1 < len(self._history):
+                    self.historyPos += 1
+                    self.setText(self._history[self.historyPos])
+                    return
+            elif evt.key() == Q.Qt.Key_N:
+                if self.historyPos > 0 and self._history:
+                    self.historyPos -= 1
+                    self.setText(self._history[self.historyPos - 1])
+                else:
+                    self.historyPos = -1
+                    return
+            elif evt.key() in (Q.Qt.Key_C, Q.Qt.Key_U):
+                self.historyPos = -1
+                self.clear()
+                return
+        super().keyPressEvent(evt)
+
+    @property
+    def history(self):
+        return self._history
+
+    @property
+    def historyPos(self):
+        return self._history_pos
+
+    @historyPos.setter
+    def historyPos(self,pos):
+        new_pos = max(min(len(self._history)-1, int(pos)),-1)
+        if new_pos != self._history_pos:
+            self._history_pos = new_pos
+            if new_pos >= 0:
+                self.setText(self.history[new_pos])
+            else:
+                self.clear()
+            self.historyPosChanged.emit(new_pos)
+
+    def historyAppend(self,text):
+        self._history.appendleft(text)
+#        self._history_pos += 1
+        self.historyAppended.emit(text)
+
+    def onReturnPressed(self):
+        text = self.text().strip()
+        self.historyAppend(text)
+        self._history_pos= -1
+        self.clear()
+        self.historyPosChanged.emit(-1)
+        self.submitted.emit(text)
 
 class CtrlPlayer(Q.QWidget):
     vwidth = 540
@@ -579,6 +723,36 @@ class CtrlPlayer(Q.QWidget):
 #        self.layout.addWidget(self.videocontainer)
         self.layout.addLayout(control_layout)
 
+#        self.toolbar = Q.QDockWidget()
+#        self.toolbar.setFeatures(Q.QDockWidget.DockWidgetFloatable| Q.QDockWidget.DockWidgetMovable)
+        self.toolbargroup = toolbargroup = Q.QGroupBox()
+#        self.toolbar.setWidget(toolbargroup)
+#        self.window().addDockWidget(Q.Qt.BottomDockWidgetArea,self.toolbar)
+
+        toolbarlayout= Q.QVBoxLayout()
+        histloglayout= Q.QHBoxLayout()
+        self.histline= Q.QTextEdit()
+        self.histline.setReadOnly(True)
+        self.histline.setSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Preferred)
+        self.logline= Q.QTextEdit()
+        self.logline.setReadOnly(True)
+        self.logline.setSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Preferred)
+#        self.toolbar.show()
+
+#        self._timer.start()
+
+        self.cmdline = cmdline = CmdLine()
+#        self.cmdline = cmdline = CmdLine(self.toolbargroup)
+        self.cmdline.setSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Preferred)
+        toolbarlayout.addWidget(self.cmdline)
+        histloglayout.addWidget(self.histline)
+        histloglayout.addWidget(self.logline )
+        toolbarlayout.addLayout(histloglayout)
+#        toolbargroup.setLayout(toolbarlayout)
+        self.layout.addLayout(toolbarlayout)
+        cmdline.submitted.connect(self.onCmdlineAccept)
+        cmdline.historyChanged.connect(self.redoHistory)
+        self.childwidget.logMessage.connect(self.onLogMessage)
 
     @Q.pyqtSlot()
     def openUrl(self):
@@ -612,71 +786,38 @@ class CtrlPlayer(Q.QWidget):
                     print("\n"+filePath+"\n")
                     self.childwidget.try_command("loadfile",str(filePath),"append-play")
 
-class CmdLine(Q.QLineEdit):
-    submitted = Q.pyqtSignal(str)
-    historyPosChanged = Q.pyqtSignal(int)
-    historyChanged = Q.pyqtSignal()
-    historyAppended = Q.pyqtSignal(str)
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._history = list()
-        self._history_pos = 0
-        self.historyAppended.connect(self.historyChanged)
-        self.returnPressed.connect(self.onReturnPressed)
-        self.returnPressed.connect(self.onReturnPressed)
-    def keyPressEvent(self, evt):
-        if evt.modifiers() ==  Q.Qt.ControlModifier:
-            if evt.key() == Q.Qt.Key_P:
-                if self.historyPos+ 1 < len(self._history):
-                    self.historyPos += 1
-                    self.setText(self._history[self.historyPos])
-                    return
-            elif evt.key() == Q.Qt.Key_N:
-                if self.historyPos > 0 and self._history:
-                    self.historyPos -= 1
-                    self.setText(self._history[self.historyPos - 1])
-                else:
-                    self.historyPos = -1
-                    return
-            elif evt.key() in (Q.Qt.Key_C, Q.Qt.Key_U):
-                self.historyPos = -1
-                self.clear()
-                return
-        super().keyPressEvent(evt)
 
-    @property
-    def history(self):
-        return self._history
+    def redoHistory(self):
+        self.histline.clear()
+        for h in reversed(self.cmdline.history):
+            self.histline.append(h)
 
-    @property
-    def historyPos(self):
-        return self._history_pos
+    def onLogMessage(self, msg):
+        self.logline.append('[{}]\t{}:\t{}'.format(msg.level, msg.prefix,msg.text.strip()))
 
-    @historyPos.setter
-    def historyPos(self,pos):
-        new_pos = max(min(len(self._history)-1, int(pos)),-1)
-        if new_pos != self._history_pos:
-            self._history_pos = new_pos
-            if new_pos >= 0:
-                self.setText(self.history[new_pos])
-            else:
-                self.clear()
-            self.historyPosChanged.emit(new_pos)
-
-    def historyAppend(self,text):
-        self._history.append(text)
-#        self._history_pos += 1
-        self.historyAppended.emit(text)
-
-    def onReturnPressed(self):
-        text = self.text().strip()
-        self.historyAppend(text)
-        self._history_pos= -1
-        self.clear()
-        self.historyPosChanged.emit(-1)
-        self.submitted.emit(text)
-
+    @Q.pyqtSlot(str)
+    def onCmdlineAccept(self, text):
+#        try:parts = eval(text)#.split()
+#        except:parts = None
+#        if not parts:
+#            try:parts = shlex.split(text)
+#            except: parts = None
+#        if not parts:
+#            parts =
+#            try:parts = shlex.split(text)
+#            except: parts = None
+#
+        self.histline.append(text)
+#        text = shlex.split(text)#text.split(' ')
+#            pass
+#        print(*text)
+        self.childwidget.command_string(text)
+        self.redoHistory()
+#        self.cmdline.clear()
 class Canvas(Q.QMainWindow):
+    _use_tree = True
+    _use_table= True
+
     def createPlaylistDock(self):
 #        from playlist import PlayList
         self.next_id = 0
@@ -684,84 +825,125 @@ class Canvas(Q.QMainWindow):
         self.propertydock = Q.QDockWidget()
         self.propertydock.setWindowTitle("Playlist")
         self.propertydock.setFeatures(Q.QDockWidget.DockWidgetFloatable| Q.QDockWidget.DockWidgetMovable)
-        self.propertyview = Q.QTableView(self.propertydock)
-        self.propertymodel= AVFlatPropertyModel(player=self.playerwidget,parent=self)
-        self.propertyview.setModel(self.propertymodel)
-        self.propertydock.setWidget(self.propertyview)
+        tw = Q.QTabWidget(parent=self.propertydock)
+        player = self.playerwidget
+        player._property_model = AVTreePropertyModel(player=player, parent=player)
+        if self._use_tree:
+            tv = Q.QTreeView()
+            tv.setModel(player._property_model)
+            tw.addTab(tv,'tree')
+#            tv.header().setSectionResizeMode(Q.QHeaderView.Stretch)
+
+#        player._flat_model     = AVFlatPropertyModel(player=player, parent=player)
+#        if self._use_table:
+#            self.propertymodel= AVFlatPropertyModel(player=self.playerwidget,parent=self)
+#            self.propertyview = Q.QTableView(self.propertydock)
+#            self.propertyview.setModel(player._flat_model)
+#            tw.addTab(self.propertyview, 'table')
+#            self.propertyview.horizontalHeader().setSectionResizeMode(Q.QHeaderView.Stretch)
+
+        self.propertydock.setWidget(tw)
+        tw.show()
+        tw.parent().adjustSize()
+        tw.parent().update()
         self.propertydock.show()
 #        self.playlistdock.setWidget(self.playlist)
 
     def __init__(self,*args, fp = None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.widget = CtrlPlayer(fp=fp,parent=self)
-        self.playerwidget = self.widget.childwidget
-        self.setCentralWidget(self.widget)
-        self.createPlaylistDock()
-        self.addDockWidget(Q.Qt.LeftDockWidgetArea,self.propertydock)
-        self.propertydock.fileMenu = self.menuBar().addMenu("&File")
-        fileMenu = self.propertydock.fileMenu
+        self._timer = Q.QTimer()
+#        self._timer.setInterval(int(1000/30))
+        self._timer.setTimerType(Q.Qt.PreciseTimer)
+
+        tw = Q.QTabWidget(parent=self)
+        cw = CtrlPlayer(*args, parent=self, **kwargs)
+        self._timer.timeout.connect(cw.update)
+        tw.addTab(cw,"video")
+        cw.childwidget.resize(self.size())
+        player = cw.childwidget
+        player._property_model = AVTreePropertyModel(player=player,parent=player)
+        tv = Q.QTreeView()
+        tv.setModel(player._property_model)
+        tw.addTab(tv,"properties")
+        tw.setVisible(True)
+        self.widget = cw
+        self.playerwidget = player
+        self._timer.timeout.connect(self.widget.update)
+
+#        self.widget = CtrlPlayer(fp=fp,parent=self)
+#        self.playerwidget = self.widget.childwidget
+        self.setCentralWidget(tw)
+
+#        self.toolbar = Q.QDockWidget()
+#        self.toolbar.setFeatures(Q.QDockWidget.DockWidgetFloatable| Q.QDockWidget.DockWidgetMovable)
+#        self.toolbar.setWidget(toolbargroup)
+#        self.addDockWidget(Q.Qt.BottomDockWidgetArea,self.toolbar)
+#        self.toolbar.show()
+
+#    def finishPlaylist(self):
+#        self.createPlaylistDock()
+#        self.addDockWidget(Q.Qt.LeftDockWidgetArea,self.propertydock)
+#        self.propertydock.fileMenu = 
+        fileMenu = self.menuBar().addMenu("&File")
+#        fileMenu = self.propertydock.fileMenu
         fileMenu.addAction("&Open...",self.widget.openFile,"Ctrl+O")
         fileMenu.addAction("O&pen Url...",self.widget.openUrl,"Ctrl+Shift+O")
         fileMenu.addAction("E&xit",self.close,"Ctrl+Q")
 
-        self.toolbar = Q.QDockWidget()
-        self.toolbar.setFeatures(Q.QDockWidget.DockWidgetFloatable| Q.QDockWidget.DockWidgetMovable)
-        toolbargroup = Q.QGroupBox(self.toolbar)
-        toolbarlayout= Q.QVBoxLayout()
-        histloglayout= Q.QHBoxLayout()
-        self.histline= Q.QTextEdit()
-        self.histline.setReadOnly(True)
-        self.histline.setSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Expanding)
-        self.logline= Q.QTextEdit()
-        self.logline.setReadOnly(True)
-        self.logline.setSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Expanding)
+    @property
+    def forcedFrameRate(self):
+        if self._timer.interval():
+            return 10000 / self._timer.interval()
 
-        self.cmdline = cmdline = CmdLine(self.toolbar)
-        self.cmdline.setSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Preferred)
-        toolbarlayout.addWidget(self.cmdline)
-        histloglayout.addWidget(self.histline)
-        histloglayout.addWidget(self.logline )
-        toolbarlayout.addLayout(histloglayout)
-        toolbargroup.setLayout(toolbarlayout)
-        self.toolbar.setWidget(toolbargroup)
-        self.addDockWidget(Q.Qt.BottomDockWidgetArea,self.toolbar)
-        self.toolbar.show()
-        cmdline.submitted.connect(self.onCmdlineAccept)
-        cmdline.historyChanged.connect(self.redoHistory)
-        self.playerwidget.logMessage.connect(self.onLogMessage)
-    def redoHistory(self):
-        self.histline.clear()
-        for h in self.cmdline.history:
-            self.histline.append(h)
-    def onLogMessage(self, msg):
-        self.logline.append('[{}]\t{}:\t{}'.format(msg.level, msg.prefix,msg.text.strip()))
-
-    @Q.pyqtSlot(str)
-    def onCmdlineAccept(self, text):
-        text = text.split()
-#        self.histline.append(' '.join(text))
-#        print(*text)
-        self.playerwidget.try_command(*text)
-#        self.cmdline.clear()
+    @forcedFrameRate.setter
+    def forcedFrameRate(self, val):
+        if val:
+            self._timer.setInterval(int(1000/float(val)))
+            self.playerwidget.externalDrive= True
+            self._timer.start()
+        else:
+            self._timer.stop()
+            self.playerwidget.externalDrive= False
+#            self.playerwidget.reportFlip = True
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', '--format')
     parser.add_argument('path', nargs='+')
+    parser.add_argument('--forcerate',type=float,default=None)
+    parser.add_argument('--nrf','--no-reportflip',action='store_true')
+
     args = parser.parse_args()
+
+    Q.QCoreApplication.setAttribute(Q.Qt.AA_ShareOpenGLContexts)
     fmt = Q.QSurfaceFormat.defaultFormat()
     fmt.setVersion(4,5)
     fmt.setProfile(Q.QSurfaceFormat.CoreProfile)
-    fmt.setSamples(4)
+    fmt.setSamples(0)
     Q.QSurfaceFormat.setDefaultFormat(fmt)
-
+    fmt = Q.QSurfaceFormat.defaultFormat()
     app = Q.QApplication([])
 
     mw = Canvas()
+    if args.forcerate is not None and args.forcerate:
+        mw.forcedFrameRate = args.forcerate
+    else:
+        mw.forcedFrameRate = None
+
     ap = mw.playerwidget
+
+    if args.nrf:
+        ap.reportFlip = False
+    else:
+        ap.reportFlip = True
+
+#    if args.reportflip:
+#        ap.reportFlip = True
     mw.show()
     mw.raise_()
     for path in args.path:
         ap.m.command('loadfile',path,'append-play')
+    with SignalWakeupHandler(app):
+        signal.signal(signal.SIGINT, lambda *a:app.quit())
 
-    app.exec_()
+        sys.exit(app.exec_())
