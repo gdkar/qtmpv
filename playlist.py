@@ -8,7 +8,7 @@ class PlayListItem(Q.QListWidgetItem):
     def __init__(self,parent, path,*args,**kwargs):
         super().__init__(parent, *args,**kwargs)
         if path:
-            self.path = pathlib.Path(path)
+            self.path = pathlib.Path(path).resolve().absolute()
             self.setText(self.path.resolve().name)
 #        self.path = pathlib.Path(path) if path else None
 #        self.setText(posixpath.basename(self.path))
@@ -29,7 +29,7 @@ class PlayList(Q.QListWidget):
             if filePath.samefile(it['filename']):
                 where.m.playlist_pos = idx
                 return
-        where.command('loadfile',filePath.as_posix(), 'append-play')
+        where.try_command('loadfile',filePath.as_posix(), 'append-play')
 #        w = where.widget
 #        if w: w.sized_once = False
 #        if w:
@@ -168,4 +168,6 @@ class PlayList(Q.QListWidget):
     @Q.pyqtSlot("QListWidgetItem*")
     def on_clicked(self,item):
         if self.player:
-            self.player.playlist_pos.setValue(self.row(item))
+            row = self.row(item)
+            if row >= 0 and row < self.player.playlist_count.value():
+                self.player.playlist_pos.setValue(row)

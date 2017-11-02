@@ -17,6 +17,9 @@ from topwindow import TopWindow
 from player import Player
 
 if __name__ == '__main__':
+    fmt = Q.QSurfaceFormat.defaultFormat()
+    fmt.setSamples(0)
+    Q.QSurfaceFormat.setDefaultFormat(fmt)
     app = Q.QApplication(sys.argv)
 
 #    player = Player()

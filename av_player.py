@@ -123,10 +123,10 @@ class AVProperty(Q.QObject):
 
 #    def __bool__(self):
 #        return bool(self.value())
-    def __int__(self):
-        return int(self.value())
-    def __float__(self):
-        return float(self.value())
+#    def __int__(self):
+#        return int(self.value())
+#    def __float__(self):
+#        return float(self.value())
     def __index__(self):
         return int(self)
     def __str__(self):
@@ -161,35 +161,32 @@ class AVPlayer(Q.QOpenGLWidget):
 #        ,'input_vo_keyboard':True
         ,'gapless_audio':True
         ,'osc':False
-        ,'osd-level':3
-        ,'keep-open':False
         ,'load_scripts':False
         ,'ytdl':True
-        ,'force-window':True
         ,'vo':'opengl-cb'
-#        ,'opengl-fbo-frmat':'rgba32f'
-        ,'alpha':True
+#        ,'opengl-fbo-format':'rgba16'
+#        ,'alpha':True
 #        ,'opengl-es':False
         ,'opengl-swapinterval':1
         ,'opengl-backend':'x11'
-        ,'video-sync':'display-resample-desync'
+        ,'video-sync':'display-resample'
         ,'display-sync-active':True
-        ,'display-fps':60.0
+#        ,'display-fps':60.0
         ,'interpolation-threshold':1e-12
         ,'interpolation':True
         ,'vo-vaapi-scaling':'nla'
         ,'vo-vaapi-scaled-osd':True
-        ,'vo-vdpau-hqscaling':9
+        ,'vo-vdpau-hqscaling':5
         ,'vo-vdpau-deint':True
 #        ,'vd-lavc-fast':True
 #        ,'vd-lavc-show-all':True
         ,'hr-seek':True
         ,'hwdec-preload':True
-        ,'hwdec':'vaapi'
-        ,'opengl_hwdec_interop':'vaapi-glx'
-#        , 'player-operation-mode':'pseudo-gui'
+        ,'hwdec':'vdpau'
+        ,'opengl_hwdec_interop':'vdpau-glx'
           }
     _reportFlip = False
+    _reportedFlip = False
     _externalDrive = False
     novid = Q.pyqtSignal()
     hasvid = Q.pyqtSignal()
@@ -218,13 +215,14 @@ class AVPlayer(Q.QOpenGLWidget):
 #                prop_name = prop
 #                pass
         prop_object = AVProperty(prop_name, ctx=self.m,parent=self)
-        setattr(self,prop,      prop_object)
+        setattr(self,prop, prop_object)
         if not hasattr(self,prop_name):
             setattr(self,prop_name, prop_object)
         return prop_object
 
     def __getattr__(self, prop):
-        try: prop_name = self.m.attr_name(prop)
+        try:
+            prop_name = self.m.attr_name(prop)
         except:
             raise AttributeError
         if not prop_name:
@@ -237,9 +235,9 @@ class AVPlayer(Q.QOpenGLWidget):
         if not hasattr(self,prop_name):
             setattr(self,prop_name, prop_object)
         return prop_object
-
-        return self.get_property(prop)
-
+    def sizeHint(self):
+        return Q.QSize(self.img_width,self.img_height)
+#        return self.get_property(prop)
     @staticmethod
     def get_options(*args,**kwargs):
         options = kwargs
@@ -255,11 +253,18 @@ class AVPlayer(Q.QOpenGLWidget):
     def __init__(self, *args,fp=None, **kwargs):
         super().__init__(*args,**kwargs)
 
-        fmt = Q.QSurfaceFormat.defaultFormat()
-        fmt.setVersion(4,5)
-        fmt.setProfile(Q.QSurfaceFormat.CoreProfile)
-        fmt.setSamples(4)
-        self.setFormat(fmt)
+#        self._offscreen = Q.QOffscreenSurface()
+#        self._octx      = Q.QOpenGLContext()
+#        gctx = Q.QOpenGLContext.globalShareContext()
+#        self._octx.setShareContext(gctx)
+#        self._octx.setFormat(gctx.format())
+#        self._octx.create()
+#        self._offscreen.setFormat(self._octx.format())
+#        self._offscreen.create()
+
+#        self._octx.makeCurrent(self._offscreen)
+#        self.mctx = ModernGL.create_context()
+
         self.setMouseTracking(True)
         self.event_handler_cache = weakref.WeakValueDictionary()
         self.prop_bindings = dict()
@@ -269,9 +274,7 @@ class AVPlayer(Q.QOpenGLWidget):
         new_options,media = self.get_options(*args ,**kwargs)
         options.update(new_options)
         options['msg-level'] = 'all=status,vd=debug,hwdec=debug,vo=debug,video=v,opengl=debug'
-#        options['hwdec'] = 'vaapi-copy'
-#        options['opengl_hwdec_interop'] = 'vaapi-egl'
-
+        options['af']='rubberband=channels=apart:pitch=quality'
         self.new_frame = False
 
         self.m= self.mpv.Context(**options)
@@ -289,7 +292,7 @@ class AVPlayer(Q.QOpenGLWidget):
         self.img_width      = 64;#self.mpv.width
         self.img_height     = 64;#self.mpv.height
         self.img_update     = None
-        self.setMinimumSize(self.img_width,self.img_height)
+#        self.setMinimumSize(self.img_width,self.img_height)
         self.tex_id = 0
         self.fbo = None
         self._width = self.img_width
@@ -389,15 +392,13 @@ class AVPlayer(Q.QOpenGLWidget):
     def initializeGL(self):
         print('initialize GL')
         self._vf = Q.QOpenGLContext.currentContext().versionFunctions(self.pfl)
-        self.qctx = Q.QGLContext.currentContext()
         self.mctx = ModernGL.create_context()
-
         def getprocaddr(name):
-#            print(name)
-#            return self.qctx.getProcAddress(name.decode('latin1'))
             return self.mctx.mglo.get_proc_address(name.decode('latin1'))
         self.ogl = self.m.opengl_cb_context
         self.ogl.init_gl(getprocaddr,None)
+#        self.m.opengl_fbo_format = 'rgba16'
+#        self.m.alpha = True
 
         weakref.finalize(self, lambda:self.ogl.set_update_callback(None))
         self.wakeup.connect(self.onWakeup,Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
@@ -406,8 +407,8 @@ class AVPlayer(Q.QOpenGLWidget):
 
     @Q.pyqtSlot()
     def onFrameSwapped(self):
-        if self.reportFlip:
-            self.ogl.report_flip(self.m.time)
+#        if self.reportFlip:
+        self.ogl.report_flip(self.m.time)
 
     @property
     def reportFlip(self):
@@ -415,13 +416,7 @@ class AVPlayer(Q.QOpenGLWidget):
 
     @reportFlip.setter
     def reportFlip(self, val):
-        val = bool(val)
-        if val == self._reportFlip:
-            return
-        if val and not self._reportFlip:
-            self._reportFlip = True
-        else:
-            raise AttributeError('cannot turn off flip reporting once it is turned on.')
+        self._reportFlip = bool(val)
 
     @property
     def externalDrive(self):
@@ -482,12 +477,12 @@ class CmdLine(Q.QLineEdit):
         self.returnPressed.connect(self.onReturnPressed)
     def keyPressEvent(self, evt):
         if evt.modifiers() ==  Q.Qt.ControlModifier:
-            if evt.key() == Q.Qt.Key_P:
+            if evt.key() == Q.Qt.Key_P or evt.key() == Q.Qt.Key_Up:
                 if self.historyPos+ 1 < len(self._history):
                     self.historyPos += 1
                     self.setText(self._history[self.historyPos])
                     return
-            elif evt.key() == Q.Qt.Key_N:
+            elif evt.key() == Q.Qt.Key_N or evt.key() == Q.Qt.Key_Down:
                 if self.historyPos > 0 and self._history:
                     self.historyPos -= 1
                     self.setText(self._history[self.historyPos - 1])
@@ -520,7 +515,8 @@ class CmdLine(Q.QLineEdit):
             self.historyPosChanged.emit(new_pos)
 
     def historyAppend(self,text):
-        self._history.appendleft(text)
+        if(text):
+            self._history.appendleft(text)
 #        self._history_pos += 1
         self.historyAppended.emit(text)
 
@@ -533,7 +529,7 @@ class CmdLine(Q.QLineEdit):
         self.submitted.emit(text)
 
 class CtrlPlayer(Q.QWidget):
-    vwidth = 540
+    vwidth = 640
     vheight = 480
     timeline_precision = 1e-4
     timeline_threshold = 1e-2
@@ -544,20 +540,22 @@ class CtrlPlayer(Q.QWidget):
         if height > 0 and height < 2**16:
             self.vheight= height
         if self.vwidth and self.vheight:
-            self.childwidget.setMinimumSize(Q.QSize(self.vwidth,self.vheight))
-#        if (not self.sized_once) and width:
-#            self.adjustSize()
-            self.adjustSize()
-            parent = self.parent()
-            if parent:
-                parent.adjustSize()
-                parent = parent.parent()
+            self.childwidget.img_width = self.vwidth
+            self.childwidget.img_height = self.vheight
+            if (not self.sized_once) and width:
+                self.childwidget.setMinimumSize(Q.QSize(self.vwidth,self.vheight))
+                self.adjustSize()
+                self.adjustSize()
+                parent = self.parent()
                 if parent:
                     parent.adjustSize()
-            self.window().update()
-            if not self.sized_once:
-                self.sized_once = True
-                self.show()
+                    parent = parent.parent()
+                    if parent:
+                        parent.adjustSize()
+                self.window().update()
+                if not self.sized_once:
+                    self.sized_once = True
+                    self.show()
 
     def novid(self):
         self.sized_once = False
@@ -635,6 +633,8 @@ class CtrlPlayer(Q.QWidget):
     def __init__(self, *args, **kwargs):
         fp = kwargs.pop('fp',None)
         super().__init__(*args,**kwargs)
+
+
         self.setSizePolicy(Q.QSizePolicy(
             Q.QSizePolicy.MinimumExpanding
           , Q.QSizePolicy.MinimumExpanding
@@ -832,7 +832,7 @@ class Canvas(Q.QMainWindow):
             tv = Q.QTreeView()
             tv.setModel(player._property_model)
             tw.addTab(tv,'tree')
-#            tv.header().setSectionResizeMode(Q.QHeaderView.Stretch)
+            tv.header().setSectionResizeMode(Q.QHeaderView.Stretch)
 
 #        player._flat_model     = AVFlatPropertyModel(player=player, parent=player)
 #        if self._use_table:
@@ -857,7 +857,6 @@ class Canvas(Q.QMainWindow):
 
         tw = Q.QTabWidget(parent=self)
         cw = CtrlPlayer(*args, parent=self, **kwargs)
-        self._timer.timeout.connect(cw.update)
         tw.addTab(cw,"video")
         cw.childwidget.resize(self.size())
         player = cw.childwidget
@@ -868,7 +867,7 @@ class Canvas(Q.QMainWindow):
         tw.setVisible(True)
         self.widget = cw
         self.playerwidget = player
-        self._timer.timeout.connect(self.widget.update)
+        self._timer.timeout.connect(cw.update)
 
 #        self.widget = CtrlPlayer(fp=fp,parent=self)
 #        self.playerwidget = self.widget.childwidget
@@ -883,7 +882,7 @@ class Canvas(Q.QMainWindow):
 #    def finishPlaylist(self):
 #        self.createPlaylistDock()
 #        self.addDockWidget(Q.Qt.LeftDockWidgetArea,self.propertydock)
-#        self.propertydock.fileMenu = 
+#        self.propertydock.fileMenu =
         fileMenu = self.menuBar().addMenu("&File")
 #        fileMenu = self.propertydock.fileMenu
         fileMenu.addAction("&Open...",self.widget.openFile,"Ctrl+O")
@@ -910,18 +909,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', '--format')
     parser.add_argument('path', nargs='+')
+    parser.add_argument('--extra',default=None,action='store')
     parser.add_argument('--forcerate',type=float,default=None)
     parser.add_argument('--nrf','--no-reportflip',action='store_true')
 
     args = parser.parse_args()
 
     Q.QCoreApplication.setAttribute(Q.Qt.AA_ShareOpenGLContexts)
-    fmt = Q.QSurfaceFormat.defaultFormat()
-    fmt.setVersion(4,5)
-    fmt.setProfile(Q.QSurfaceFormat.CoreProfile)
-    fmt.setSamples(0)
-    Q.QSurfaceFormat.setDefaultFormat(fmt)
-    fmt = Q.QSurfaceFormat.defaultFormat()
     app = Q.QApplication([])
 
     mw = Canvas()
@@ -941,8 +935,18 @@ if __name__ == '__main__':
 #        ap.reportFlip = True
     mw.show()
     mw.raise_()
+    if args.extra:
+        extra = args.extra.split()
+        for e in extra:
+            if '=' in e:
+                a,_,b = e.partition('=')
+                ap.m.set_property(a,b)
     for path in args.path:
-        ap.m.command('loadfile',path,'append-play')
+        if '=' in path:
+            a,_,b = path.partition('=')
+            ap.m.set_property(a,b)
+        else:
+            ap.m.command('loadfile',path,'append-play')
     with SignalWakeupHandler(app):
         signal.signal(signal.SIGINT, lambda *a:app.quit())
 

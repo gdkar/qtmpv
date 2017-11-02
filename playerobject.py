@@ -9,12 +9,37 @@ class PlayerObject(Q.QOpenGLWidget):
     mpv = __import__('mpv')
     base_options = {
          'input-default-bindings':True
-        ,'input_vo_keyboard':True
+#        ,'input_vo_keyboard':True
         ,'gapless_audio':True
-        ,'osc':True
-        ,'keep-open':True
-        ,'load_scripts':True
+        ,'osc':False
+        ,'osd-level':3
+        ,'keep-open':False
+        ,'load_scripts':False
         ,'ytdl':True
+        ,'force-window':True
+        ,'vo':'opengl-cb'
+        ,'opengl-fbo-frmat':'rgba32f'
+        ,'alpha':'blend-tiles'
+        ,'opengl-es':False
+        ,'opengl-swapinterval':1
+        ,'video-sync':'display-resample'
+        ,'display-sync-active':True
+        ,'display-fps':60.0
+#        ,'display-fps':60
+        ,'interpolation-threshold':1e-12
+        ,'interpolation':True
+        ,'vo-vaapi-scaling':'nla'
+        ,'vo-vaapi-scaled-osd':True
+#        ,'vo-vdpau-hqscaling':9
+#        ,'vo-vdpau-deint':True
+        ,'vd-lavc-fast':True
+        ,'vd-lavc-threads':0
+#        ,'vd-lavc-show-all':True
+        ,'hr-seek':True
+        ,'hwdec-preload':True
+        ,'hwdec':'vaapi-copy'
+        ,'opengl_hwdec_interop':'vaapi-egl'
+#        , 'player-operation-mode':'pseudo-gui'
           }
 
     novid = Q.pyqtSignal()

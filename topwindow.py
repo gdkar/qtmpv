@@ -135,7 +135,7 @@ class TopWindow(Q.QMainWindow):
         mdiArea.subWindowActivated.connect(lambda *x: self.playlist.setPlayer(mdiArea.activeSubWindow()))
         self.destroyed.connect(self.shutdown,Q.Qt.DirectConnection)
         self._timer = Q.QTimer()
-        self._timer.setInterval(int(1000/30))
+        self._timer.setInterval(int(1000/15))
         self._timer.setTimerType(Q.Qt.PreciseTimer)
         self._timer.timeout.connect(self.update)
         self._timer.start()
@@ -172,7 +172,6 @@ class TopWindow(Q.QMainWindow):
 #        pw = PlayerWidget(player,self,*args, **kwargs)
         tw = Q.QTabWidget(parent=self)
         cw = CtrlPlayer(*args, parent=None, **kwargs)
-        self._timer.timeout.connect(cw.update)
         tw.addTab(cw,"video")
 
         cw.childwidget.resize(self.size())
@@ -181,7 +180,7 @@ class TopWindow(Q.QMainWindow):
         tv = Q.QTreeView()
         tv.setModel(player._property_model)
         tw.addTab(tv,"properties")
-
+        self._timer.timeout.connect(cw.update)
         player.index = self.next_id
         player._playlist = self.playlist
         self.next_id += 1

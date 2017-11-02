@@ -27,7 +27,8 @@ class TreeItem(object):
 
     @property
     def player(self):
-        return self._player()
+        if self._player is not None:
+            return self._player()
 
     def findData(self, value, column=0):
         for child in self._children:
@@ -53,12 +54,17 @@ class TreeItem(object):
     def data(self, column):
         if column is 0:
             return self._name
+
+    @property
     def parent(self):
-        return self._parent()
+        if self._parent is not None:
+            return self._parent()
+
     def row(self):
-        if self._parent:
+        parent = self.parent
+        if parent:
             try:
-                return self._parent._children.index(self)
+                return parent._children.index(self)
             except:
                 pass
         return 0
@@ -107,12 +113,29 @@ class LeafItem(TreeItem):
             except:
                 self._prop  = None
         if self._prop is not None:
-            self._prop.valueChanged.connect(self._update)
+            self._bind_av_property(self._prop)
+#            self._prop.valueChanged.connect(self._update)
 #            if model is not None:
 #                index = model.indexForItem(item = self, column=1)
 #                self._prop.valueChanged.connect(lambda:model.dataChanged.emit(index,index))
 
         self._attr = attr
+
+    def _bind_av_property(self, prop):
+        if prop is not None:
+            prop.valueChanged.connect(self._update)
+            prop_ref = weakref.ref(prop)
+            def _disconnect(self):
+                prop = prop_ref()
+                if prop:
+                    try:prop.valueChanged.disconnect(self._update)
+                    except:pass
+                    try:prop.destroyed.disconnect(self._detach)
+                    except:pass
+            self._finalizer = weakref.finalize(self, _disconnect, self)
+            prop.destroyed.connect(self._detach,Q.Qt.DirectConnection)
+    def _detach(self):
+        self._finalizer.detach()
     def _update(self):
         if self._prop is None:
             if self.player and self._attr:
@@ -125,32 +148,43 @@ class LeafItem(TreeItem):
                     pass
 #                    self._prop  = None
             if self._prop is not None:
-                self._prop.valueChanged.connect(self._update)
+                self._bind_av_property(self._prop)
+#                self._prop.valueChanged.connect(self._update)
 #                    self._prop.valueChanged.connect(lambda:model.dataChanged.emit(index,index))
-        if self._prop:
+        if self._prop is not None:
             _val = self._prop.value()
         else:
             return
-        if _val != self._val:
+        if self._val is None or _val != self._val:
             self._val = _val
-
+            model = self._model
             has_children = self._model and self._children
-            if has_children:
-                self._model.layoutAboutToBeChanged.emit()
-            self._children.clear()
-            if isinstance(_val, list):
-                for n,_sub in enumerate(_val):
-                    LitItem(name = self._name+'/{}'.format(n),val=_sub, player=self.player,parent=self, model=self._model)
-            elif isinstance(_val, dict):
-                for k,v in _val.items():
-                    LitItem(name = self._name+'/{}'.format(k),val=v,player=self.player,parent=self,model=self._model)
-            if has_children:
-                self._model.layoutChanged.emit()
-            elif self._model:
-                model = self._model
-                index_hi = model.indexForItem(item = self, column=0)
-                index_lo = model.index(row = self.row() + 1, column=1,parent=model.parent(index_hi))
-                self._model.dataChanged.emit(index_hi,index_lo)
+#            while self._children:
+#                _ = self._children.pop(0)
+#                _._parent = None
+#                _._player = None
+            if model:
+                idx = model.indexForItem(self, 0)
+                if len(self._children):
+                    model.beginRemoveRows(idx, 0, len(self._children))
+                    self._children.clear()
+                    model.endRemoveRows()
+            if isinstance(_val, (list,dict)):
+                if model:
+                    model.beginInsertRows(idx, 0, len(_val))
+                if isinstance(_val, list):
+                    for n,_sub in enumerate(_val):
+                        LitItem(name = self._name+'/{}'.format(n),val=_sub, player=self.player,parent=self, model=self._model)
+                elif isinstance(_val, dict):
+                    for k,v in _val.items():
+                        LitItem(name = self._name+'/{}'.format(k),val=v,player=self.player,parent=self,model=self._model)
+                if model:
+                    model.endInsertRows()
+#            if has_children:
+#                self._model.layoutChanged.emit()
+            elif model:
+#                index_lo = model.index(row = self.row() + 1, column=1,parent=model.parent(index_hi))
+                model.dataChanged.emit(idx,idx)
 
 
     def setData(self, column, data):
@@ -234,7 +268,8 @@ class AVTreePropertyModel(Q.QAbstractItemModel):
         childItem = index.internalPointer()
         if not childItem:
             return Q.QModelIndex()
-        parentItem = childItem.parent()
+
+        parentItem = childItem.parent
         if not parentItem:
             return Q.QModelIndex()
         if parentItem is self._rootItem:
