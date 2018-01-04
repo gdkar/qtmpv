@@ -11,7 +11,7 @@ import time
 import collections
 from qtproxy import Q
 
-import av
+#import av
 import mpv
 import av_player
 

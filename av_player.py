@@ -16,7 +16,7 @@ import collections
 from qtproxy import Q
 import ModernGL
 
-import av
+#import av
 import mpv
 from av_propertymodel import *
 import qtconsole
@@ -89,6 +89,7 @@ class AVFlatPropertyModel(Q.QAbstractTableModel):
 
     def rowCount(self,parent=Q.QModelIndex()):
         return len(self._props)
+
     def columnCount(self,parent=Q.QModelIndex()):
         return 2
 
@@ -121,12 +122,6 @@ class AVProperty(Q.QObject):
             self._value = value
             self.valueChanged.emit(value)
 
-#    def __bool__(self):
-#        return bool(self.value())
-#    def __int__(self):
-#        return int(self.value())
-#    def __float__(self):
-#        return float(self.value())
     def __index__(self):
         return int(self)
     def __str__(self):
@@ -164,11 +159,11 @@ class AVPlayer(Q.QOpenGLWidget):
         ,'load_scripts':False
         ,'ytdl':True
         ,'vo':'opengl-cb'
-#        ,'opengl-fbo-format':'rgba16'
+#        ,'opengl-fbo-format':'rgba16f'
 #        ,'alpha':True
-#        ,'opengl-es':False
+#        ,'opengl-es':True
         ,'opengl-swapinterval':1
-        ,'opengl-backend':'x11'
+        ,'opengl-backend':'drm'
         ,'video-sync':'display-resample'
         ,'display-sync-active':True
 #        ,'display-fps':60.0
@@ -178,26 +173,20 @@ class AVPlayer(Q.QOpenGLWidget):
         ,'vo-vaapi-scaled-osd':True
         ,'vo-vdpau-hqscaling':5
         ,'vo-vdpau-deint':True
-#        ,'vd-lavc-fast':True
+        ,'vd-lavc-fast':True
 #        ,'vd-lavc-show-all':True
         ,'hr-seek':True
         ,'hwdec-preload':True
-        ,'hwdec':'vdpau'
-        ,'opengl_hwdec_interop':'vdpau-glx'
+        ,'hwdec':'yes'
+        ,'opengl-hwdec-interop':'drmprime-drm'
           }
     _reportFlip = False
     _reportedFlip = False
     _externalDrive = False
     novid = Q.pyqtSignal()
     hasvid = Q.pyqtSignal()
-#    playlistChanged = Q.pyqtSignal(object)
-#    playlist_posChanged = Q.pyqtSignal(int)
-#    time_posChanged = Q.pyqtSignal(object)
     reconfig = Q.pyqtSignal(int,int)
     fullscreen = Q.pyqtSignal(bool)
-#    speedChanged = Q.pyqtSignal(object)
-#    durationChanged = Q.pyqtSignal(object)
-#    video_paramsChanged = Q.pyqtSignal(object)
     wakeup = Q.pyqtSignal()
     mpv_event = Q.pyqtSignal()
     logMessage = Q.pyqtSignal(object)
@@ -207,13 +196,11 @@ class AVPlayer(Q.QOpenGLWidget):
     def get_property(self, prop):
         try: prop_name = self.m.attr_name(prop)
         except: return
-        if not prop_name: return
+        if not prop_name:
+            return
         binding = self.findChild(AVProperty, prop_name)
         if binding:
             return binding
-#            raise AttributeError
-#                prop_name = prop
-#                pass
         prop_object = AVProperty(prop_name, ctx=self.m,parent=self)
         setattr(self,prop, prop_object)
         if not hasattr(self,prop_name):
@@ -277,13 +264,15 @@ class AVPlayer(Q.QOpenGLWidget):
         options['af']='rubberband=channels=apart:pitch=quality'
         self.new_frame = False
 
-        self.m= self.mpv.Context(**options)
-        self.just_die.connect(self.m.shutdown,Q.Qt.DirectConnection)
+        mpv = self.mpv
+        self.m= mpv.Context(**options)
+        m = self.m
+        self.just_die.connect(m.shutdown,Q.Qt.DirectConnection)
         self.destroyed.connect(self.just_die,Q.Qt.DirectConnection)
 
         self.m.set_log_level('terminal-default')
+#        m.set_wakeup_callback_thread(self.onEvent)
         self.m.set_wakeup_callback_thread(self.onEvent)
-
         self.m.request_event(self.mpv.EventType.property_change,True)
         self.m.request_event(self.mpv.EventType.video_reconfig,True)
         self.m.request_event(self.mpv.EventType.file_loaded,True)
@@ -309,11 +298,13 @@ class AVPlayer(Q.QOpenGLWidget):
 
     def command(self,*args, **kwargs):
         self.m.command(*args, **kwargs)
+
     def command_string(self, cmdlist):
         try:
             self.m.command_string(cmdlist)
         except:
             pass
+
     def try_command(self, *args, **kwargs):
         kwargs.setdefault('_async',True)
         try:
@@ -397,7 +388,7 @@ class AVPlayer(Q.QOpenGLWidget):
             return self.mctx.mglo.get_proc_address(name.decode('latin1'))
         self.ogl = self.m.opengl_cb_context
         self.ogl.init_gl(getprocaddr,None)
-#        self.m.opengl_fbo_format = 'rgba16'
+#        self.m.opengl_fbo_format = 'rgba32f'
 #        self.m.alpha = True
 
         weakref.finalize(self, lambda:self.ogl.set_update_callback(None))
@@ -407,8 +398,8 @@ class AVPlayer(Q.QOpenGLWidget):
 
     @Q.pyqtSlot()
     def onFrameSwapped(self):
-#        if self.reportFlip:
-        self.ogl.report_flip(self.m.time)
+        if self.reportFlip:
+            self.ogl.report_flip(self.m.time)
 
     @property
     def reportFlip(self):
@@ -570,7 +561,6 @@ class CtrlPlayer(Q.QWidget):
             pass
     @Q.pyqtSlot(object)
     def onVideo_paramsChanged(self,params):
-#        print("video params changed: ",repr(params))
         try:
             self.reconfig(params['w'],params['h'])
         except:
@@ -598,11 +588,9 @@ class CtrlPlayer(Q.QWidget):
     @Q.pyqtSlot(int)
     def onTimelineChanged(self,when):
         self.childwidget.try_command("seek", when * self.timeline_precision,"absolute+keyframes")
+
     def onTimespinChanged(self,when):
         self.childwidget.try_command("seek", when ,"absolute+exact")
-
-#        s = min(max(0.,when * 100./self.timeline_base),100.)
-#        self.childwidget.try_command("seek",s,"absolute+exact")
 
     @Q.pyqtSlot(object)
     def onTime_posChanged(self,time_pos):
@@ -634,17 +622,16 @@ class CtrlPlayer(Q.QWidget):
         fp = kwargs.pop('fp',None)
         super().__init__(*args,**kwargs)
 
-
         self.setSizePolicy(Q.QSizePolicy(
             Q.QSizePolicy.MinimumExpanding
           , Q.QSizePolicy.MinimumExpanding
           , Q.QSizePolicy.Frame))
-        self.childwidget = AVPlayer(fp=fp,parent=self)
-        self.childwidget.setSizePolicy(Q.QSizePolicy(
+        childwidget = self.childwidget = AVPlayer(fp=fp,parent=self)
+        childwidget.setSizePolicy(Q.QSizePolicy(
             Q.QSizePolicy.MinimumExpanding
           , Q.QSizePolicy.MinimumExpanding
           , Q.QSizePolicy.Label))
-        childwidget = self.childwidget
+
         self.layout = Q.QVBoxLayout()
         self.layout.addWidget(self.childwidget)
         self.setLayout(self.layout)
@@ -664,10 +651,10 @@ class CtrlPlayer(Q.QWidget):
 
         self.layout.addLayout(time_layout)
 
-        self.childwidget.time_pos.valueChanged.connect(self.onTime_posChanged)
+        childwidget.time_pos.valueChanged.connect(self.onTime_posChanged)
         self.timeline.valueChanged.connect(self.onTimelineChanged)
         self.timespin.valueChanged.connect(self.onTimespinChanged)
-        self.childwidget.duration.valueChanged.connect(self.onDurationChanged)
+        childwidget.duration.valueChanged.connect(self.onDurationChanged)
 
         self.speed      = Q.QSlider(Q.Qt.Horizontal)
         self.speed.setSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Preferred)
@@ -676,7 +663,7 @@ class CtrlPlayer(Q.QWidget):
         self.speed.setRange(16,2*self.speed_base)
         self.speed.setEnabled(True)
         self.speed.valueChanged.connect(self.speedChanged)
-        self.childwidget.speed.valueChanged.connect(self.onSpeedChanged)
+        childwidget.speed.valueChanged.connect(self.onSpeedChanged)
 
         play_button = Q.QPushButton("play/pause")
         play_button.clicked.connect(self.pause)
@@ -737,9 +724,6 @@ class CtrlPlayer(Q.QWidget):
         self.logline= Q.QTextEdit()
         self.logline.setReadOnly(True)
         self.logline.setSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Preferred)
-#        self.toolbar.show()
-
-#        self._timer.start()
 
         self.cmdline = cmdline = CmdLine()
 #        self.cmdline = cmdline = CmdLine(self.toolbargroup)
@@ -797,23 +781,10 @@ class CtrlPlayer(Q.QWidget):
 
     @Q.pyqtSlot(str)
     def onCmdlineAccept(self, text):
-#        try:parts = eval(text)#.split()
-#        except:parts = None
-#        if not parts:
-#            try:parts = shlex.split(text)
-#            except: parts = None
-#        if not parts:
-#            parts =
-#            try:parts = shlex.split(text)
-#            except: parts = None
-#
         self.histline.append(text)
-#        text = shlex.split(text)#text.split(' ')
-#            pass
-#        print(*text)
         self.childwidget.command_string(text)
         self.redoHistory()
-#        self.cmdline.clear()
+
 class Canvas(Q.QMainWindow):
     _use_tree = True
     _use_table= True
@@ -915,7 +886,23 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    fmt = Q.QSurfaceFormat.defaultFormat()
+    fmt.setVersion(4,5)
+    fmt.setProfile(fmt.CoreProfile)
+    fmt.setDepthBufferSize(24)
+    fmt.setRedBufferSize(8)
+    fmt.setGreenBufferSize(8)
+    fmt.setBlueBufferSize(8)
+    fmt.setAlphaBufferSize(8)
+#    fmt.setSwapBehavior(fmt.TripleBuffer)
+#    fmt.setSwapBehavior(fmt.SingleBuffer)
+#    fmt.setRenderableType(fmt.OpenGL)
+    fmt.setOption(fmt.DeprecatedFunctions,False)
+#    fmt.setOption(fmt.ResetNotification,True)
+    Q.QSurfaceFormat.setDefaultFormat(fmt)
+
     Q.QCoreApplication.setAttribute(Q.Qt.AA_ShareOpenGLContexts)
+
     app = Q.QApplication([])
 
     mw = Canvas()
@@ -947,7 +934,13 @@ if __name__ == '__main__':
             ap.m.set_property(a,b)
         else:
             ap.m.command('loadfile',path,'append-play')
+#    import IPython, ipykernel, threading
+#    kt = threading.Thread(target=IPython.embed)
+#    kt.start()
+#    qc = ipykernel.connect_qtconsole()
+#    IPython.embed_kernel()
     with SignalWakeupHandler(app):
         signal.signal(signal.SIGINT, lambda *a:app.quit())
-
+#        IPython.embed()
+#        Q.QTimer.singleShot(0,IPython.embed)
         sys.exit(app.exec_())
