@@ -77,8 +77,6 @@ class PlayList(Q.QListWidget):
             p = p.widget()
             if p:
                 p = p.findChild(av_player.AVPlayer)
-#            if p:
-#                p = p.player
         if self.player is p:
             return
         if self.player:

@@ -5,6 +5,10 @@ from av_propertymodel import AVTreePropertyModel
 import sys
 class TopWindow(Q.QMainWindow):
     crossfadeChanged = Q.pyqtSignal(int)
+    shutdown = Q.pyqtSignal()
+    cascadeSubWindows = Q.pyqtSignal()
+    childChanged = Q.pyqtSignal(object)
+
     def createPlaylistDock(self):
         from playlist import PlayList
         self.next_id = 0
@@ -12,7 +16,14 @@ class TopWindow(Q.QMainWindow):
         self.playlistdock = QW.QDockWidget()
         self.playlistdock.setWindowTitle("Playlist")
         self.playlistdock.setFeatures(QW.QDockWidget.DockWidgetFloatable| QW.QDockWidget.DockWidgetMovable)
-        self.playlistdock.setWidget(self.playlist)
+
+        self.playlistsplit = QW.QSplitter()
+        self.playlistsplit.setOrientation(Q.Qt.Vertical)
+        self.playlistsplit.addWidget(self.playlist)
+#        tv = self.dockprops = Q.QTreeView()
+#        self.playlistsplit.addWidget(tv)
+        self.playlistdock.setWidget(self.playlistsplit)
+#        self.playlist.playerChanged.connect(self.setDockModel)
 
 #        from playlist import PlayList
 #        self.playlist = PlayList(self, None)
@@ -30,6 +41,12 @@ class TopWindow(Q.QMainWindow):
 #        self.propertydock.show()
 #        self.playlistdock.setWidget(self.playlist)
 
+#    def setDockModel(self, player):
+#        if player:
+#            self.dockprops.setModel(player._property_model)
+#        else:
+#            self.dockprops.setModel(None)
+
     def onCrossfadeChanged(self, cross):
         pass
 #        self.players[0].m.volume = (100.- cross)/2
@@ -43,26 +60,12 @@ class TopWindow(Q.QMainWindow):
             for p in self.players:
                 if p.index == where:
                     return p
-#                    player = p
-#                    if p.m:
-#                        return p
-#                    if p.widget and p.m:
-#                        return p
-#                    break
-#        if player is None:
-#            for p in self.players:
-#                if not p.widget or p.index < 0:
-#                    player = p
-#                    player.index = self.next_id
-#                    self.next_id+=1
-#                    break
         if player is None:
             player = self.makeWidgetFor()
 
         self.playlist.updateActions()
 
         return player
-    shutdown = Q.pyqtSignal()
     def openFile(self, where = -1 ):
         prev = self.playlist.player
         player = self.getPlayerAt(where)
@@ -79,13 +82,10 @@ class TopWindow(Q.QMainWindow):
         self.playlist.openUrl()
         self.playlist.player = prev
 
-    cascadeSubWindows = Q.pyqtSignal()
-
     @property
     def players(self):
         return self.findChildren(AVPlayer)
 
-    childChanged = Q.pyqtSignal(object)
 
     def childEvent(self,evt):
         self.childChanged.emit(evt)
@@ -123,11 +123,11 @@ class TopWindow(Q.QMainWindow):
 
         cf_bar = self.addToolBar(Q.Qt.BottomToolBarArea,cf_bar)
 
-        self.winMenu = self.menuBar().addMenu("&Window")
-        winMenu = self.winMenu
+        winMenu = self.winMenu = self.menuBar().addMenu("&Window")
         winMenu.addAction("Cl&ose",mdiArea.closeActiveSubWindow)
         winMenu.addAction("Close&All",mdiArea.closeAllSubWindows)
         winMenu.addAction("&Tile",mdiArea.tileSubWindows)
+
         cascadeAction = winMenu.addAction("&Cascade",self.cascadeSubWindows)
         cascadeAction.triggered.connect(mdiArea.cascadeSubWindows)
         winMenu.addAction("Ne&xt",mdiArea.activateNextSubWindow,Q.QKeySequence.NextChild)
@@ -141,21 +141,14 @@ class TopWindow(Q.QMainWindow):
         self._timer.start()
         frate = kwargs.pop('forcerate',None)
         if frate:
-            try:
-                self.forcedFrameRate = float(frate)
-            except:
-                pass
+            try: self.forcedFrameRate = float(frate)
+            except: pass
         self._options,media = AVPlayer.get_options(*args)
-#        if media:
-#            for item in media:
-#                self.getPlayer(0).getPlayer
-
 
         p = self.getPlayerAt(-1)
         self.playlist.setPlayer(p)
         if media:
             self.playlist.updateActions()
-#            self.makeWidgetFor(p,*args,**kwargs)
             list(map(self.playlist.onRequestFile,media))
     @property
     def forcedFrameRate(self):
@@ -166,10 +159,6 @@ class TopWindow(Q.QMainWindow):
        self._timer.setInterval(int(1000/val))
 
     def makeWidgetFor(self,*args, **kwargs):
-#        player.softvol = True
-#        for option in self._options.items():
-#            player.m.set_option(*option)
-#        pw = PlayerWidget(player,self,*args, **kwargs)
         tw = Q.QTabWidget(parent=self)
         cw = CtrlPlayer(*args, parent=None, **kwargs)
         tw.addTab(cw,"video")

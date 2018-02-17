@@ -240,19 +240,8 @@ class AVPlayer(Q.QOpenGLWidget):
     def __init__(self, *args,fp=None, **kwargs):
         super().__init__(*args,**kwargs)
 
-#        self._offscreen = Q.QOffscreenSurface()
-#        self._octx      = Q.QOpenGLContext()
-#        gctx = Q.QOpenGLContext.globalShareContext()
-#        self._octx.setShareContext(gctx)
-#        self._octx.setFormat(gctx.format())
-#        self._octx.create()
-#        self._offscreen.setFormat(self._octx.format())
-#        self._offscreen.create()
-
-#        self._octx.makeCurrent(self._offscreen)
-#        self.mctx = ModernGL.create_context()
-
         self.setMouseTracking(True)
+        self._updated = False
         self.event_handler_cache = weakref.WeakValueDictionary()
         self.prop_bindings = dict()
         import locale
@@ -271,17 +260,16 @@ class AVPlayer(Q.QOpenGLWidget):
         self.destroyed.connect(self.just_die,Q.Qt.DirectConnection)
 
         self.m.set_log_level('terminal-default')
-#        m.set_wakeup_callback_thread(self.onEvent)
         self.m.set_wakeup_callback_thread(self.onEvent)
         self.m.request_event(self.mpv.EventType.property_change,True)
         self.m.request_event(self.mpv.EventType.video_reconfig,True)
         self.m.request_event(self.mpv.EventType.file_loaded,True)
         self.m.request_event(self.mpv.EventType.log_message,True)
 
-        self.img_width      = 64;#self.mpv.width
-        self.img_height     = 64;#self.mpv.height
+        self.img_width      = 64
+        self.img_height     = 64
         self.img_update     = None
-#        self.setMinimumSize(self.img_width,self.img_height)
+
         self.tex_id = 0
         self.fbo = None
         self._width = self.img_width
@@ -382,7 +370,7 @@ class AVPlayer(Q.QOpenGLWidget):
 
     def initializeGL(self):
         print('initialize GL')
-        self._vf = Q.QOpenGLContext.currentContext().versionFunctions(self.pfl)
+#        self._vf = Q.QOpenGLContext.currentContext().versionFunctions(self.pfl)
         self.mctx = ModernGL.create_context()
         def getprocaddr(name):
             return self.mctx.mglo.get_proc_address(name.decode('latin1'))
@@ -398,8 +386,10 @@ class AVPlayer(Q.QOpenGLWidget):
 
     @Q.pyqtSlot()
     def onFrameSwapped(self):
-        if self.reportFlip:
-            self.ogl.report_flip(self.m.time)
+        if self._updated:
+            self._updated = False
+            if self.reportFlip:
+                self.ogl.report_flip(self.m.time)
 
     @property
     def reportFlip(self):
@@ -428,6 +418,7 @@ class AVPlayer(Q.QOpenGLWidget):
 
     def paintGL(self):
         self.ogl.draw(self.defaultFramebufferObject(),self._width,-self._height)
+        self._updated = True
 
 
 #    @Q.pyqtSlot(object)
@@ -508,7 +499,6 @@ class CmdLine(Q.QLineEdit):
     def historyAppend(self,text):
         if(text):
             self._history.appendleft(text)
-#        self._history_pos += 1
         self.historyAppended.emit(text)
 
     def onReturnPressed(self):
@@ -703,25 +693,24 @@ class CtrlPlayer(Q.QWidget):
         childwidget.video_params.valueChanged.connect(self.onVideo_paramsChanged)
         childwidget.reconfig.connect(self.reconfig)
         childwidget.novid.connect(self.novid)
+        childwidget.hasvid.connect(self.hasvid)
         self.sized_once = False
         self.reconfig(640,480)
         self.sized_once = False
-        childwidget.hasvid.connect(self.hasvid)
-#        self.layout.addWidget(self.videocontainer)
+
         self.layout.addLayout(control_layout)
 
-#        self.toolbar = Q.QDockWidget()
-#        self.toolbar.setFeatures(Q.QDockWidget.DockWidgetFloatable| Q.QDockWidget.DockWidgetMovable)
+
+
         self.toolbargroup = toolbargroup = Q.QGroupBox()
-#        self.toolbar.setWidget(toolbargroup)
-#        self.window().addDockWidget(Q.Qt.BottomDockWidgetArea,self.toolbar)
 
         toolbarlayout= Q.QVBoxLayout()
         histloglayout= Q.QHBoxLayout()
-        self.histline= Q.QTextEdit()
+        self.histline= Q.QPlainTextEdit()
         self.histline.setReadOnly(True)
+        self.histline.setCenterOnScroll(True)
         self.histline.setSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Preferred)
-        self.logline= Q.QTextEdit()
+        self.logline= Q.QPlainTextEdit()
         self.logline.setReadOnly(True)
         self.logline.setSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Preferred)
 
@@ -770,20 +759,33 @@ class CtrlPlayer(Q.QWidget):
                     print("\n"+filePath+"\n")
                     self.childwidget.try_command("loadfile",str(filePath),"append-play")
 
-
     def redoHistory(self):
         self.histline.clear()
+        tc = self.histline.textCursor()
+        tc.movePosition(tc.End,tc.MoveAnchor)
+        self.histline.setTextCursor(tc)
+
         for h in reversed(self.cmdline.history):
-            self.histline.append(h)
+            tc.insertText(h)
+            tc.insertText('\n')
 
     def onLogMessage(self, msg):
-        self.logline.append('[{}]\t{}:\t{}'.format(msg.level, msg.prefix,msg.text.strip()))
+        tc = self.logline.textCursor()
+        tc.movePosition(tc.End,tc.MoveAnchor)
+        self.logline.setTextCursor(tc)
+        tc.insertText('[{}]\t{}:\t{}'.format(msg.level, msg.prefix,msg.text).strip())
+        tc.insertText('\n')
+#        self.logline.ensureCursorVisible()
 
     @Q.pyqtSlot(str)
     def onCmdlineAccept(self, text):
-        self.histline.append(text)
+        tc = self.histline.textCursor()
+        tc.movePosition(tc.End,tc.MoveAnchor)
+        self.histline.setTextCursor(tc)
+        tc.insertText(text)
+        tc.insertText('\n')
         self.childwidget.command_string(text)
-        self.redoHistory()
+#        self.redoHistory()
 
 class Canvas(Q.QMainWindow):
     _use_tree = True
@@ -886,20 +888,20 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    fmt = Q.QSurfaceFormat.defaultFormat()
-    fmt.setVersion(4,5)
-    fmt.setProfile(fmt.CoreProfile)
-    fmt.setDepthBufferSize(24)
-    fmt.setRedBufferSize(8)
-    fmt.setGreenBufferSize(8)
-    fmt.setBlueBufferSize(8)
-    fmt.setAlphaBufferSize(8)
+#    fmt = Q.QSurfaceFormat.defaultFormat()
+#    fmt.setVersion(4,5)
+#    fmt.setProfile(fmt.CoreProfile)
+#    fmt.setDepthBufferSize(24)
+#    fmt.setRedBufferSize(8)
+#    fmt.setGreenBufferSize(8)
+#    fmt.setBlueBufferSize(8)
+#    fmt.setAlphaBufferSize(8)
 #    fmt.setSwapBehavior(fmt.TripleBuffer)
 #    fmt.setSwapBehavior(fmt.SingleBuffer)
 #    fmt.setRenderableType(fmt.OpenGL)
-    fmt.setOption(fmt.DeprecatedFunctions,False)
+#    fmt.setOption(fmt.DeprecatedFunctions,False)
 #    fmt.setOption(fmt.ResetNotification,True)
-    Q.QSurfaceFormat.setDefaultFormat(fmt)
+#    Q.QSurfaceFormat.setDefaultFormat(fmt)
 
     Q.QCoreApplication.setAttribute(Q.Qt.AA_ShareOpenGLContexts)
 

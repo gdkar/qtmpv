@@ -17,9 +17,7 @@ from topwindow import TopWindow
 from player import Player
 
 if __name__ == '__main__':
-    fmt = Q.QSurfaceFormat.defaultFormat()
-    fmt.setSamples(0)
-    Q.QSurfaceFormat.setDefaultFormat(fmt)
+#    Q.QSurfaceFormat.setDefaultFormat(fmt)
     app = Q.QApplication(sys.argv)
 
 #    player = Player()
@@ -31,10 +29,26 @@ if __name__ == '__main__':
             kwargs[parts[0]] = parts[2]
         else:
             args.append(arg)
+
     with SignalWakeupHandler(app):
         signal.signal(signal.SIGINT, lambda *a:app.quit())
 
         win = TopWindow(*args, **kwargs)
+        fmt = Q.QOpenGLContext.globalShareContext().format()
+        print('OpenGLFormat:\n')
+        print('version={}'.format(fmt.version()))
+        print('samples={}'.format(fmt.samples()))
+        print('redBufferSize={}'.format(fmt.redBufferSize()))
+        print('greenBufferSize={}'.format(fmt.greenBufferSize()))
+        print('blueBufferSize={}'.format(fmt.blueBufferSize()))
+        print('alphaBufferSize={}'.format(fmt.alphaBufferSize()))
+        print('depthBufferSize={}'.format(fmt.depthBufferSize()))
+        print('stencilBufferSize={}'.format(fmt.stencilBufferSize()))
+        print('swapBehavior={}'.format(fmt.swapBehavior()))
+        print('swapInterval={}'.format(fmt.swapInterval()))
+        print('debugContext={}'.format(fmt.testOption(fmt.DebugContext)))
+        print('deprecatedFunctions={}'.format(fmt.testOption(fmt.DeprecatedFunctions)))
+        print('renderable={}'.format(fmt.renderableType()))
         app.aboutToQuit.connect(win.close)
         win.show()
         sys.exit(app.exec_())
