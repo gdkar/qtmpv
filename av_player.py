@@ -23,6 +23,7 @@ import mpv
 from av_propertymodel import *
 import qtconsole
 
+
 class AVFlatPropertyModel(Q.QAbstractTableModel):
 
     Mimetype = 'application/vnd.row.list'
@@ -171,7 +172,8 @@ class AVPlayer(Q.QOpenGLWidget):
         ,'tscale-wparam': 1.0
         ,'tscale':'gaussian'
         ,'interpolation':True
-        ,'opengl-backend':'x11egl'
+        ,'opengl-backend':'drm
+        n'
         ,'video-sync':'display-resample'
         ,'display-fps':60.0
         ,'interpolation-threshold':0.0
@@ -186,7 +188,7 @@ class AVPlayer(Q.QOpenGLWidget):
 #        ,'hr-seek-framedrop':True
         ,'hwdec-preload':True
         ,'hwdec':'yes'
-        ,'opengl-hwdec-interop':'vaapi-egl'
+        ,'opengl-hwdec-interop':'drmprime-drm'
           }
     _reportFlip = False
     _reportedFlip = False
@@ -203,6 +205,7 @@ class AVPlayer(Q.QOpenGLWidget):
     eventRateChanged = Q.pyqtSignal(object)
     frameRateChanged = Q.pyqtSignal(object)
     swapRateChanged  = Q.pyqtSignal(object)
+    openglInitialized = Q.pyqtSignal(object)
     mpv = __import__('mpv')
 
     def get_property(self, prop):
@@ -467,6 +470,7 @@ class AVPlayer(Q.QOpenGLWidget):
         self.wakeup.connect(self.onWakeup,Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
         self.frameSwapped.connect(self.onFrameSwapped)
         self.ogl.set_update_callback(self.wakeup.emit)
+        self.openglInitialized.emit(Q.QOpenGLContext.currentContext())
 
     @Q.pyqtSlot()
     def onFrameSwapped(self):
@@ -1101,23 +1105,24 @@ if __name__ == '__main__':
 #        mw.forcedFrameRate = None
 
     ap = mw.playerwidget
-    fmt = Q.QOpenGLContext.globalShareContext().format()
-    print('OpenGLFormat:\n')
-    print('version={}'.format(fmt.version()))
-    print('samples={}'.format(fmt.samples()))
-    print('redBufferSize={}'.format(fmt.redBufferSize()))
-    print('greenBufferSize={}'.format(fmt.greenBufferSize()))
-    print('blueBufferSize={}'.format(fmt.blueBufferSize()))
-    print('alphaBufferSize={}'.format(fmt.alphaBufferSize()))
-    print('depthBufferSize={}'.format(fmt.depthBufferSize()))
-    print('stencilBufferSize={}'.format(fmt.stencilBufferSize()))
-    print('swapBehavior={}'.format(fmt.swapBehavior()))
-    print('swapInterval={}'.format(fmt.swapInterval()))
-    print('debugContext={}'.format(fmt.testOption(fmt.DebugContext)))
-    print('deprecatedFunctions={}'.format(fmt.testOption(fmt.DeprecatedFunctions)))
-    print('renderable={}'.format(fmt.renderableType()))
+    def dump_fmt(fmt):
+        print('OpenGLFormat:\n')
+        print('version={}'.format(fmt.version()))
+        print('samples={}'.format(fmt.samples()))
+        print('redBufferSize={}'.format(fmt.redBufferSize()))
+        print('greenBufferSize={}'.format(fmt.greenBufferSize()))
+        print('blueBufferSize={}'.format(fmt.blueBufferSize()))
+        print('alphaBufferSize={}'.format(fmt.alphaBufferSize()))
+        print('depthBufferSize={}'.format(fmt.depthBufferSize()))
+        print('stencilBufferSize={}'.format(fmt.stencilBufferSize()))
+        print('swapBehavior={}'.format(fmt.swapBehavior()))
+        print('swapInterval={}'.format(fmt.swapInterval()))
+        print('debugContext={}'.format(fmt.testOption(fmt.DebugContext)))
+        print('deprecatedFunctions={}'.format(fmt.testOption(fmt.DeprecatedFunctions)))
+        print('renderable={}'.format(fmt.renderableType()))
 
-    del fmt
+
+    ap.openglInitialized.connect(lambda x:dump_fmt(x.format()))
 
     if args.nrf:
         ap.reportFlip = False

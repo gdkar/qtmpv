@@ -30,8 +30,8 @@ if version_str:
 
 if version is None:
     try:
-        version = ( int(posix.environ.get(b'AV_PLAYER_OGL_VERSION_MAJOR','4')),
-                    int(posix.environ.get(b'AV_PLAYER_OGL_VERSION_MINOR','5')))
+        version = ( int(posix.environ.get(b'AV_PLAYER_OGL_VERSION_MAJOR',b'4')),
+                    int(posix.environ.get(b'AV_PLAYER_OGL_VERSION_MINOR',b'5')))
     except: pass
 
 if version is not None:
@@ -52,7 +52,7 @@ if renderable:
     except:
         pass
 
-renderable = posix.environ.get(b'AV_PLAYER_OGL_SWAP_BEHAVIOR',None)
+renderable = posix.environ.get(b'AV_PLAYER_OGL_SWAP_BEHAVIOR',b'DoubleBuffer')
 if renderable:
     renderable = renderable.decode('utf8')
     try:
@@ -64,11 +64,11 @@ if renderable:
     except:
         pass
 
-try: fmt.setOption(fmt.DebugContext,int(posix.environ.get(b'AV_PLAYER_OGL_DEBUG_CONTEXT', '0')))
+try: fmt.setOption(fmt.DebugContext,int(posix.environ.get(b'AV_PLAYER_OGL_DEBUG_CONTEXT', b'0')))
 except: pass
-try: fmt.setSwapInterval(int(posix.environ.get(b'AV_PLAYER_OGL_SWAP_INTERVAL', '0')))
+try: fmt.setSwapInterval(int(posix.environ.get(b'AV_PLAYER_OGL_SWAP_INTERVAL', b'0')))
 except: pass
-try: fmt.setSamples(int(posix.environ.get(b'AV_PLAYER_OGL_SAMPLES', '0')))
+try: fmt.setSamples(int(posix.environ.get(b'AV_PLAYER_OGL_SAMPLES', b'0')))
 except: pass
 
 QSurfaceFormat.setDefaultFormat(fmt)
