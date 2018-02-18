@@ -135,8 +135,8 @@ class TopWindow(Q.QMainWindow):
         mdiArea.subWindowActivated.connect(lambda *x: self.playlist.setPlayer(mdiArea.activeSubWindow()))
         self.destroyed.connect(self.shutdown,Q.Qt.DirectConnection)
         self._timer = Q.QTimer()
-        self._timer.setInterval(int(1000/15))
-        self._timer.setTimerType(Q.Qt.PreciseTimer)
+        self._timer.setInterval(int(1000/30))
+#        self._timer.setTimerType(Q.Qt.PreciseTimer)
         self._timer.timeout.connect(self.update)
         self._timer.start()
         frate = kwargs.pop('forcerate',None)
@@ -165,7 +165,7 @@ class TopWindow(Q.QMainWindow):
 
         cw.childwidget.resize(self.size())
         player = cw.childwidget
-        player._property_model = AVTreePropertyModel(player=player,parent=player)
+#        player._property_model = AVTreePropertyModel(player=player,parent=player)
         tv = Q.QTreeView()
         tv.setModel(player._property_model)
         tw.addTab(tv,"properties")

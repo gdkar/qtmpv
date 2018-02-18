@@ -66,9 +66,9 @@ if renderable:
 
 try: fmt.setOption(fmt.DebugContext,int(posix.environ.get(b'AV_PLAYER_OGL_DEBUG_CONTEXT', '0')))
 except: pass
-try: fmt.setSwapInterval(int(posix.environ.get(b'AV_PLAYER_SWAP_INTERVAL', '1')))
+try: fmt.setSwapInterval(int(posix.environ.get(b'AV_PLAYER_OGL_SWAP_INTERVAL', '0')))
 except: pass
-try: fmt.setSamples(int(posix.environ.get(b'AV_PLAYER_SAMPLES', '0')))
+try: fmt.setSamples(int(posix.environ.get(b'AV_PLAYER_OGL_SAMPLES', '0')))
 except: pass
 
 QSurfaceFormat.setDefaultFormat(fmt)

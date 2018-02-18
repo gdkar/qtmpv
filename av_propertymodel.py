@@ -72,6 +72,7 @@ class TreeItem(object):
 class LitItem(TreeItem):
     def __init__(self, name, val, player=None, parent=None,model=None):
         super().__init__(name, player=player,parent=parent,model=model)
+#        print('creating LitItem',name,val)
         self._val = None
         if isinstance(val, list):
             for n,_sub in enumerate(val):
