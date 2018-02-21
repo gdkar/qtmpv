@@ -15,7 +15,7 @@ import pprint
 import time
 import collections
 from qtproxy import Q
-import ModernGL
+
 from collections import deque
 
 #import av
@@ -159,7 +159,7 @@ class AVPlayer(Q.QOpenGLWidget):
         ,'input_vo_keyboard':True
         ,'gapless_audio':True
         ,'osc':False
-        ,'load_scripts':False
+        ,'load_scripts':True
         ,'ytdl':True
         ,'vo':'opengl-cb'
         ,'opengl-fbo-format':'rgba32f'
@@ -172,17 +172,16 @@ class AVPlayer(Q.QOpenGLWidget):
         ,'tscale-wparam': 1.0
         ,'tscale':'gaussian'
         ,'interpolation':True
-        ,'opengl-backend':'drm
-        n'
+        ,'opengl-backend':'drm'
         ,'video-sync':'display-resample'
         ,'display-fps':60.0
         ,'interpolation-threshold':0.0
         ,'interpolation':True
-        ,'vo-vaapi-scaling':'nla'
-        ,'vo-vaapi-scaled-osd':True
-        ,'vo-vdpau-hqscaling':5
-        ,'vo-vdpau-deint':True
-        ,'vd-lavc-fast':True
+#        ,'vo-vaapi-scaling':'nla'
+#        ,'vo-vaapi-scaled-osd':True
+#        ,'vo-vdpau-hqscaling':5
+#        ,'vo-vdpau-deint':True
+#        ,'vd-lavc-fast':True
 #        ,'vd-lavc-show-all':True
         ,'hr-seek':'yes'
 #        ,'hr-seek-framedrop':True
@@ -193,6 +192,9 @@ class AVPlayer(Q.QOpenGLWidget):
     _reportFlip = False
     _reportedFlip = False
     _externalDrive = False
+    _get_proc_address = 'ctypes'
+    _get_proc_address_debug = True
+
     novid = Q.pyqtSignal()
     hasvid = Q.pyqtSignal()
     reconfig = Q.pyqtSignal(int,int)
@@ -281,6 +283,7 @@ class AVPlayer(Q.QOpenGLWidget):
 
         self.m.set_log_level('terminal-default')
         self.m.set_wakeup_callback_thread(self.onEvent)
+#        self.m.set_wakeup_callback(self.onEvent)
         self.m.request_event(self.mpv.EventType.property_change,True)
         self.m.request_event(self.mpv.EventType.video_reconfig,True)
         self.m.request_event(self.mpv.EventType.file_loaded,True)
@@ -315,9 +318,6 @@ class AVPlayer(Q.QOpenGLWidget):
         kwargs.setdefault('_async',True)
         try: self.m.command(*args)
         except self.mpv.MPVError: pass
-
-#    def set_property(self,prop,*args):
-#        self.m.set_property(prop,*args)
 
     @staticmethod
     def get_options(*args,**kwargs):
@@ -407,10 +407,6 @@ class AVPlayer(Q.QOpenGLWidget):
             else:
                 if self.af and not m.af:
                     m.af = self.af
-#c            if not m.aid:
- #               m.video_sync = 'audio'
- #           else:
-#                m.video_sync = 'display-resample'
 #        self.durationChanged.emit(m.duration)
         elif event.id is self.mpv.EventType.log_message:   self.logMessage.emit(event.data)
 #        print(event.data.text,)
@@ -425,12 +421,9 @@ class AVPlayer(Q.QOpenGLWidget):
             oname = event.data.name
             data  = event.data.data
             if event.reply_userdata:
-                try:
-                    event.reply_userdata(data)
-                except:
-                    pass
-            elif event.data.name == 'fullscreen':
-                pass
+                try: event.reply_userdata(data)
+                except: pass
+            elif event.data.name == 'fullscreen': pass
 
     @Q.pyqtSlot()
     def onEvent(self):
@@ -457,14 +450,28 @@ class AVPlayer(Q.QOpenGLWidget):
 
     def initializeGL(self):
         print('initialize GL')
-#        self._vf = Q.QOpenGLContext.currentContext().versionFunctions(self.pfl)
-        self.mctx = ModernGL.create_context()
-        def getprocaddr(name):
-            return self.mctx.mglo.get_proc_address(name.decode('latin1'))
+
+        if self._get_proc_address is 'ctypes':
+            import ctypes,ctypes.util
+            lgl = ctypes.cdll.LoadLibrary(ctypes.util.find_library('GL'))
+            get_proc_address = lgl.glXGetProcAddress
+            get_proc_address.restype = ctypes.c_void_p
+            get_proc_address.argtypes = [ ctypes.c_char_p ]
+            _get_proc_address = lambda name: get_proc_address(name if isinstance(name,bytes) else name.encode('latin1'))
+        else:
+            qgl_get_proc_address = Q.QGLContext.currentContext().getProcAddress
+            _get_proc_address = lambda name: int(qgl_get_proc_address(name.decode('latin1') if isinstance(name,bytes) else name))
+
+        if self._get_proc_address_debug:
+            def getprocaddr(name):
+                res = _get_proc_address(name)
+                print('{} -> address {}'.format(name,res))
+                return res
+        else:
+            getprocaddr = _get_proc_address
+
         self.ogl = self.m.opengl_cb_context
         self.ogl.init_gl(getprocaddr,None)
-#        self.m.opengl_fbo_format = 'rgba32f'
-#        self.m.alpha = True
 
         weakref.finalize(self, lambda:self.ogl.set_update_callback(None))
         self.wakeup.connect(self.onWakeup,Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
@@ -542,9 +549,8 @@ class CmdLine(Q.QLineEdit):
         super().__init__(*args, **kwargs)
         self._history = collections.deque()
         self._history_pos = 0
-        self.historyAppended.connect(self.historyChanged)
-        self.returnPressed.connect(self.onReturnPressed)
-        self.returnPressed.connect(self.onReturnPressed)
+        self.historyAppended.connect(self.historyChanged,Q.Qt.UniqueConnection)
+        self.returnPressed.connect(self.onReturnPressed, Q.Qt.UniqueConnection)
     def keyPressEvent(self, evt):
         if evt.modifiers() ==  Q.Qt.ControlModifier:
             if evt.key() == Q.Qt.Key_P or evt.key() == Q.Qt.Key_Up:
@@ -608,8 +614,8 @@ class CmdLine(Q.QLineEdit):
 class CtrlPlayer(Q.QWidget):
     vwidth = 640
     vheight = 480
-    timeline_precision = 1e-4
-    timeline_threshold = 1e-3
+    timeline_precision = 1e-5
+    timeline_threshold = 1e-4
     pitch_bend =  1.0
 
     def reconfig(self,width,height):
@@ -641,38 +647,61 @@ class CtrlPlayer(Q.QWidget):
     def hasvid(self):
         self.sized_once = False
         self.show()
+
     def speedChanged(self,speed):
         try:
-            self.childwidget.m.speed = speed * 1.0/self.speed_base
+            self.childwidget.m.speed = self.speedValueToSpeed(speed)
         except self.childwidget.mpv.MPVError as e:
             pass
+
     @Q.pyqtSlot(object)
     def onVideo_paramsChanged(self,params):
         try:
             self.reconfig(params['w'],params['h'])
         except:
             pass
+    def speedValueToSpeed(self, val):
+        if val < self.speed_base:
+            return val / self.speed_base
+        else:
+            return self.speed_pow ** (val - self.speed_base)
+
+    def speedToSpeedValue(self, speed):
+        if speed <= 1.0:
+            return int(speed * self.speed_base)
+        else:
+            return int(math.log(speed,self.speed_pow) + self.speed_base)
+
+
+    @property
+    def speedRate(self):
+        return self.speedValueToSpeed(self.speed.value())
+
+    @speedRate.setter
+    def speedRate(self, value):
+        self.speed.setValue(self.speedToSpeedValue(value))
 
     @Q.pyqtSlot(object)
     def onSpeedChanged(self,speed):
-        if speed * self.speed_base != self.speed.value():
+        value = self.speedToSpeedValue(speed)
+        if value != self.speed.value():
             self.speed.blockSignals(True)
-            self.speed.setValue(int(speed * self.speed_base))
+            self.speed.setValue(value)
             self.speed.blockSignals(False)
 
     def pause(self):
         self.childwidget.command("cycle","pause")
 
     def rate_adj(self, val):
-        self.speed.setValue(int(self.speed.value() * val))
+        self.speedRate = (self.speedRate * val)
 
     def temp_rate(self, factor):
         self.pitch_bend *= factor
-        self.speed.setValue(int(self.speed.value() * factor))
+        self.speedRate = self.speedRate * factor
 
     @Q.pyqtSlot()
     def temp_rate_release(self):
-        self.speed.setValue(int(self.speed.value() / self.pitch_bend))
+        self.speedRate= (self.speedRate / self.pitch_bend)
         self.pitch_bend = 1.
 
     @property
@@ -680,13 +709,15 @@ class CtrlPlayer(Q.QWidget):
         if self.childwidget:
             fps = self.childwidget.container_fps.value()
             if fps:
-                return max(self.timeline_threshold, 1. / fps)
+                return max(self.timeline_threshold, 0.5 / fps)
         return self.timeline_threshold
 
     @Q.pyqtSlot(int)
     def onTimelineChanged(self,when):
         when *= self.timeline_precision
         cur = self.childwidget.time_pos.value()
+        if cur is None or when is None:
+            return
         threshold = self.timelineThreshold
 
         if self.timeline.isSliderDown():
@@ -736,6 +767,7 @@ class CtrlPlayer(Q.QWidget):
             self.timeline.setValue(int(curr/self.timeline_precision))
             self.timespin.blockSignals(False)
             self.timeline.blockSignals(False)
+
     def __init__(self, *args, **kwargs):
         fp = kwargs.pop('fp',None)
         use_tabs = kwargs.pop('tabs',True)
@@ -799,6 +831,8 @@ class CtrlPlayer(Q.QWidget):
         self.speed      = Q.QSlider(Q.Qt.Horizontal)
         self.speed.setSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Preferred)
         self.speed_base = 1e8
+        self.speed_max  = 5.0
+        self.speed_pow  = 5.0 ** (self.speed_base**-1)
         self.speed.setValue(self.speed_base)
         self.speed.setRange(16,2*self.speed_base)
         self.speed.setEnabled(True)
@@ -850,8 +884,6 @@ class CtrlPlayer(Q.QWidget):
 
         controls_layout.addLayout(control_layout)
 
-#        self.toolbargroup = toolbargroup = Q.QGroupBox()
-
         toolbarlayout= Q.QVBoxLayout()
         cmdlinelayout= Q.QHBoxLayout()
         histloglayout= Q.QHBoxLayout()
@@ -870,12 +902,15 @@ class CtrlPlayer(Q.QWidget):
         sr_label = self.sr_label = Q.QLabel()
         self._timer = Q.QTimer(self)
         self._timer.setInterval(int(1000/5))
-        self._timer.setTimerType(Q.Qt.PreciseTimer)
+        self._timer.setTimerType(Q.Qt.CoarseTimer)
 
-        self._timer.timeout.connect(lambda :self.pr_label.setText('paint rate: {:.6f}'.format(self.childwidget.paintRate)))
-        self._timer.timeout.connect(lambda :self.er_label.setText('event rate: {:.6f}'.format(self.childwidget.eventRate)))
-        self._timer.timeout.connect(lambda :self.fr_label.setText('frame rate: {:.6f}'.format(self.childwidget.frameRate)))
-        self._timer.timeout.connect(lambda :self.sr_label.setText('swap rate: {:.6f}'.format(self.childwidget.swapRate)))
+        def updateLabels():
+            self.pr_label.setText('paint rate: {:.6f}'.format(self.childwidget.paintRate))
+            self.er_label.setText('event rate: {:.6f}'.format(self.childwidget.eventRate))
+            self.fr_label.setText('frame rate: {:.6f}'.format(self.childwidget.frameRate))
+            self.sr_label.setText('swap rate: {:.6f}'.format(self.childwidget.swapRate))
+
+        self._timer.timeout.connect(updateLabels,Q.Qt.QueuedConnection)
         self._timer.start()
 #        self.cmdline = cmdline = CmdLine(self.toolbargroup)
         self.cmdline.setSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Preferred)
@@ -901,7 +936,6 @@ class CtrlPlayer(Q.QWidget):
             toolbarlayout.addWidget(tw)
         else:
             toolbarlayout.addLayout(histloglayout)
-#        toolbargroup.setLayout(toolbarlayout)
         controls_layout.addLayout(toolbarlayout)
         cmdline.submitted.connect(self.onCmdlineAccept,Q.Qt.UniqueConnection|Q.Qt.AutoConnection)
         cmdline.historyChanged.connect(self.redoHistory)
@@ -1074,6 +1108,8 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--format')
     parser.add_argument('path', nargs='+')
     parser.add_argument('--extra',default=None,action='store')
+    parser.add_argument('--getprocaddress',default=None,action='store')
+    parser.add_argument('--getprocaddressquiet',action='store_true')
     parser.add_argument('--forcerate',type=float,default=None)
     parser.add_argument('--nrf','--no-reportflip',action='store_true')
 
@@ -1104,7 +1140,13 @@ if __name__ == '__main__':
 #    else:
 #        mw.forcedFrameRate = None
 
+
     ap = mw.playerwidget
+
+    if args.getprocaddress:
+        ap._get_proc_address = args.getprocaddress
+    if args.getprocaddressquiet:
+        ap._get_proc_address_debug = False
     def dump_fmt(fmt):
         print('OpenGLFormat:\n')
         print('version={}'.format(fmt.version()))
