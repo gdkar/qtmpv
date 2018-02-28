@@ -1,6 +1,6 @@
 from PyQt5 import Qt as Q, QtWidgets as QW, QtGui as QG
-from playerwidget import PlayerWidget
-from av_player import AVPlayer, CtrlPlayer, AVFlatPropertyModel
+#from playerwidget import PlayerWidget
+from av_player import AVPlayer, CtrlPlayer
 from av_propertymodel import AVTreePropertyModel
 import sys
 class TopWindow(Q.QMainWindow):
@@ -152,7 +152,7 @@ class TopWindow(Q.QMainWindow):
             list(map(self.playlist.onRequestFile,media))
     @property
     def forcedFrameRate(self):
-        return 10000 / self._timer.interval()
+        return 1000 / self._timer.interval()
 
     @forcedFrameRate.setter
     def forcedFrameRate(self, val):
@@ -167,7 +167,7 @@ class TopWindow(Q.QMainWindow):
         player = cw.childwidget
 #        player._property_model = AVTreePropertyModel(player=player,parent=player)
         tv = Q.QTreeView()
-        tv.setModel(player._property_model)
+        tv.setModel(player.property_model)
         tw.addTab(tv,"properties")
         self._timer.timeout.connect(cw.update)
         player.index = self.next_id

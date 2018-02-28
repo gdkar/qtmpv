@@ -14,7 +14,7 @@ from qtproxy import Q, QW, QG
 #from PyQt5 import Qt as Q, QtWidgets as QW, QtGui as QG
 
 from topwindow import TopWindow
-from player import Player
+#from player import Player
 
 if __name__ == '__main__':
 #    Q.QSurfaceFormat.setDefaultFormat(fmt)
