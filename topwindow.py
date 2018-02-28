@@ -165,9 +165,10 @@ class TopWindow(Q.QMainWindow):
 
         cw.childwidget.resize(self.size())
         player = cw.childwidget
-#        player._property_model = AVTreePropertyModel(player=player,parent=player)
+        if player._property_model is None:
+            player._property_model = AVTreePropertyModel(player=player,parent=player)
         tv = Q.QTreeView()
-        tv.setModel(player.property_model)
+        tv.setModel(player._property_model)
         tw.addTab(tv,"properties")
         self._timer.timeout.connect(cw.update)
         player.index = self.next_id

@@ -115,15 +115,6 @@ class AVProperty(Q.QObject):
 #        return getattr(self.context,self.objectName())
 
     @Q.pyqtSlot(object)
-    def getValue(self):
-        try:
-            _value = self.context.get_property(self.objectName())
-            self._emitValueChanged(_value)
-        except:
-            _value = self._value
-        return _value
-
-    @Q.pyqtSlot(object)
     def setValue(self, value):
         if self._value != value:
             self._value = value
@@ -147,7 +138,10 @@ class AVProperty(Q.QObject):
     def __init__(self, prop, ctx, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__context__  = ctx
-        prop = ctx.attr_name(prop)
+        _prop = ctx.attr_name(prop)
+        if _prop is None:
+            raise ValueError("invalid property to observe, {}".format(prop))
+        prop = _prop
         self.setObjectName(prop)
 #        ctx.request_event(ctx.mpv.EventType.property_change,True)
         try:
@@ -234,15 +228,18 @@ class AVPlayer(Q.QOpenGLWidget):
     mpv = __import__('mpv')
 
     def get_property(self, prop):
-        try: prop_name = self.m.attr_name(prop)
-        except: return
+        try:
+            prop_name = self.m.attr_name(prop)
+        except:
+            return
         if not prop_name:
             return
         binding = self.findChild(AVProperty, prop_name)
         if binding:
             return binding
         prop_object = AVProperty(prop_name, ctx=self.m,parent=self)
-        setattr(self,prop, prop_object)
+        if not hasattr(self, prop):
+            setattr(self,prop, prop_object)
         if not hasattr(self,prop_name):
             setattr(self,prop_name, prop_object)
         return prop_object
@@ -251,7 +248,6 @@ class AVPlayer(Q.QOpenGLWidget):
         try:
             prop_name = self.m.attr_name(prop)
         except:
-#            return super().__getattr__(prop)
             raise AttributeError
         if not prop_name:
             raise AttributeError
@@ -266,7 +262,7 @@ class AVPlayer(Q.QOpenGLWidget):
 
     def sizeHint(self):
         return Q.QSize(self.img_width,self.img_height)
-#        return self.get_property(prop)
+
     @staticmethod
     def get_options(*args,**kwargs):
         options = kwargs
@@ -281,12 +277,12 @@ class AVPlayer(Q.QOpenGLWidget):
 
     def __init__(self, *args,fp=None, **kwargs):
         super().__init__(*args,**kwargs)
-#        self._property_model = None
+
         self.setSizePolicy(Q.QSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Expanding))
         self.paintTimes = deque(maxlen=32)
         self.frameTimes = deque(maxlen=32)
         self.swapTimes  = deque(maxlen=32)
-        self.eventTimes = deque(maxlen=256)
+        self.eventTimes = deque(maxlen=None)
         self.setMouseTracking(True)
         self._updated = False
         self._timesWindow = 1e6
@@ -299,19 +295,17 @@ class AVPlayer(Q.QOpenGLWidget):
         options.update(new_options)
         options['msg-level'] = 'all=status,vd=debug,hwdec=debug,vo=debug,video=v,opengl=debug'
 #        options['af']='rubberband=channels=apart:pitch=quality'
-        options['af']='scaletempo=speed=tempo:scale=1.0'
         self.new_frame = False
 
         mpv = self.mpv
-        self.m= mpv.Context(**options)
-        m = self.m
+        m = self.m = mpv.Context(**options)
         self.just_die.connect(m.shutdown,Q.Qt.DirectConnection)
         self.destroyed.connect(self.just_die,Q.Qt.DirectConnection)
 
         self.m.set_log_level('terminal-default')
         self.m.set_wakeup_callback_thread(self.onEvent)
-
 #        self.m.set_wakeup_callback(self.onEvent)
+
         self.m.request_event(self.mpv.EventType.property_change,True)
         self.m.request_event(self.mpv.EventType.video_reconfig,True)
         self.m.request_event(self.mpv.EventType.audio_reconfig,True)
@@ -329,7 +323,6 @@ class AVPlayer(Q.QOpenGLWidget):
         self.fbo = None
         self._width = self.img_width
         self._height = self.img_height
-        self.playlist.valueChanged.connect(lambda val: print('new playlist value is {}'.format(val)),no_receiver_check=True)
 
         self._property_model = AVTreePropertyModel(player=self,parent=self)
 
@@ -371,10 +364,9 @@ class AVPlayer(Q.QOpenGLWidget):
     def paintRate(self):
         if len(self.paintTimes) < 2:
             return 0
-        time = self.paintTimes[-1]
-        while len(self.paintTimes) > 2 and self.paintTimes[0] < time - self._timesWindow:
-            self.paintTimes.popleft()
-
+#        time = self.paintTimes[-1]
+#        while len(self.paintTimes) > 2 and self.paintTimes[0] < time - self._timesWindow:
+#            self.paintTimes.popleft()
         return 1e6 * (len(self.paintTimes)-1) / (self.paintTimes[-1] - self.paintTimes[0])
 
     def paintTimeAppend(self, time):
@@ -387,9 +379,9 @@ class AVPlayer(Q.QOpenGLWidget):
     def frameRate(self):
         if len(self.frameTimes) < 2:
             return 0
-        time = self.frameTimes[-1]
-        while len(self.paintTimes) > 2 and self.paintTimes[0] < time - self._timesWindow:
-            self.paintTimes.popleft()
+#        time = self.frameTimes[-1]
+#        while len(self.paintTimes) > 2 and self.paintTimes[0] < time - self._timesWindow:
+#            self.paintTimes.popleft()
         return 1e6 * (len(self.frameTimes)-1) / (self.frameTimes[-1] - self.frameTimes[0])
 
     def frameTimeAppend(self, time):
@@ -402,9 +394,9 @@ class AVPlayer(Q.QOpenGLWidget):
     def swapRate(self):
         if len(self.swapTimes) < 2:
             return 0
-        time = self.swapTimes[-1]
-        while len(self.swapTimes) > 2 and self.swapTimes[0] < time - self._timesWindow:
-            self.swapTimes.popleft()
+#        time = self.swapTimes[-1]
+#        while len(self.swapTimes) > 2 and self.swapTimes[0] < time - self._timesWindow:
+#            self.swapTimes.popleft()
 
         return 1e6 * (len(self.swapTimes)-1) / (self.swapTimes[-1] - self.swapTimes[0])
 
@@ -434,12 +426,17 @@ class AVPlayer(Q.QOpenGLWidget):
         m = self.m
         if not m:
             return
-        self.eventTimeAppend(self.m.time,event.id.name)
+        if event.id is self.mpv.EventType.property_change:
+            self.eventTimeAppend(self.m.time,'{}: {}'.format(event.id.name,event.data.name))
+        else:
+            self.eventTimeAppend(self.m.time,event.id.name)
         if event.id is self.mpv.EventType.shutdown:
             print("on_event -> shutdown")
             self.just_die.emit()
-        elif event.id is self.mpv.EventType.idle:          self.novid.emit()
-        elif event.id is self.mpv.EventType.start_file:    self.hasvid.emit()
+        elif event.id is self.mpv.EventType.idle:
+            self.novid.emit()
+        elif event.id is self.mpv.EventType.start_file:
+            self.hasvid.emit()
         elif event.id is self.mpv.EventType.audio_reconfig:
             self.af.valueChanged.emit(self.m.af)
         elif event.id is self.mpv.EventType.file_loaded:
@@ -452,13 +449,6 @@ class AVPlayer(Q.QOpenGLWidget):
                     m.aid = 1
             else:
                 pass
-#                try:
-#                    if m.current_ao in ('null' ,'none'):
-#                        m.aid = 0
-#                except self.mpv.MPVError as e:
-#                    if e.code == self.mpv.Error.property_unavailable:
-#                        pass
-#                        m.aid = 0
             if False:
                 if not m.aid:
                     if m.af:
@@ -467,9 +457,8 @@ class AVPlayer(Q.QOpenGLWidget):
                 else:
                     if self.af and not m.af:
                         m.af = self.af
-#        self.durationChanged.emit(m.duration)
-        elif event.id is self.mpv.EventType.log_message:   self.logMessage.emit(event.data)
-#        print(event.data.text,)
+        elif event.id is self.mpv.EventType.log_message:
+            self.logMessage.emit(event.data)
         elif (event.id is self.mpv.EventType.end_file
                 or event.id is self.mpv.EventType.video_reconfig):
             try:
@@ -481,9 +470,12 @@ class AVPlayer(Q.QOpenGLWidget):
             oname = event.data.name
             data  = event.data.data
             if event.reply_userdata:
-                try: event.reply_userdata(data)
-                except: pass
-            elif event.data.name == 'fullscreen': pass
+                try:
+                    event.reply_userdata(data)
+                except:
+                    pass
+            elif event.data.name == 'fullscreen':
+                pass
         else:
            self.logMessage.emit('got a {} event, with data {}'.format(event.id.name,event.data))
 
@@ -506,7 +498,6 @@ class AVPlayer(Q.QOpenGLWidget):
                     print(e)
     @Q.pyqtSlot()
     def onWakeup(self):
-#        if not self._externalDrive:
         self.frameTimeAppend(self.m.time)
         self.update()
 
@@ -577,31 +568,6 @@ class AVPlayer(Q.QOpenGLWidget):
         self.ogl.draw(self.defaultFramebufferObject(),self._width,-self._height)
         self._updated = True
 
-
-#    @Q.pyqtSlot(object)
-#    def onRequestFile(self, path):
-#        print("Setting playlist binding to ", self)
-#        if self._playlist:
-#            self._playlist.setPlayer(self)
-#            self._playlist.onRequestFile(path)
-#    def mousePressEvent(self,event):
-#        btn = 0 if (event.buttons() & Q.Qt.LeftButton) else 1
-#        self.m.command('mouse',event.x(),self._height-event.y(),btn, 'single',_async=True)
-#        event.ignore()
-#
-#    def mouseDoubleClickEvent(self,event):
-#        btn = 0 if (event.buttons() & Q.Qt.LeftButton) else 1
-#        self.m.command('mouse',event.x(),self._height-event.y(),btn, 'double',_async=True)
-#        event.ignore()
-
-#    def mouseMoveEvent(self,event):
-#        self.m.command('mouse',event.x(),event.y(),_async=True)
-#        event.ignore()
-
-#        print("Setting playlist binding to ", self)
-#        if self._playlist:
-#            self._playlist.setPlayer(self)
-#            super().mousePressEvent(event)
 class CmdLine(Q.QLineEdit):
     submitted = Q.pyqtSignal(str,bool)
     historyPosChanged = Q.pyqtSignal(int)
@@ -702,9 +668,6 @@ class CtrlPlayer(Q.QWidget):
                 if not self.sized_once:
                     self.sized_once = True
                     self.show()
-
-#    def sizeHint(self):
-#        return Q.QSize(self.vwidth,self.vheight)
 
     def novid(self):
         self.sized_once = False
@@ -964,12 +927,12 @@ class CtrlPlayer(Q.QWidget):
 
         self.cmdline = cmdline = CmdLine()
         er_label = self.er_label = Q.QLabel()
-        et_label = self.et_label = Q.QLabel()
+        et_label = self.et_label = Q.QPlainTextEdit()
         pr_label = self.pr_label = Q.QLabel()
         fr_label = self.fr_label = Q.QLabel()
         sr_label = self.sr_label = Q.QLabel()
         self._timer = Q.QTimer(self)
-        self._timer.setInterval(int(1000/5))
+        self._timer.setInterval(int(1000/8))
         self._timer.setTimerType(Q.Qt.CoarseTimer)
 
         def updateLabels():
@@ -978,17 +941,23 @@ class CtrlPlayer(Q.QWidget):
             self.fr_label.setText('frame rate: {:.6f}'.format(self.childwidget.frameRate))
             self.sr_label.setText('swap rate: {:.6f}'.format(self.childwidget.swapRate))
 
-            if self.childwidget.eventTimes:
-                types = self.eventTypes
-                types.clear()
-                for i in range(len(self.childwidget.eventTimes)):
-                    _time,_type = self.childwidget.eventTimes[i]
-                    types[_type] += 1
-#                while self.childwidget.eventTimes:
-#                    _time,_type = self.childwidget.eventTimes.popleft()
-#                    types[_type] += 1
-                types_str = '\n'.join('{}: {}'.format(_[0],_[1]) for _ in sorted(types.items()))
-                self.et_label.setText(types_str)
+#            if self.childwidget.eventTimes:
+            _types = defaultdict(lambda :0)
+#                types.clear()
+            for i in range(len(self.childwidget.eventTimes)):
+                _time,_type = self.childwidget.eventTimes[i]
+                _types[_type] += 1
+
+            if _types != self.eventTypes:
+                self.eventTypes = _types
+                self.et_label.clear()
+
+                tc = self.et_label.textCursor()
+                tc.movePosition(tc.End,tc.MoveAnchor)
+#                    self.et_label.setTextCursor(tc)
+                for _ in ('{}:\t{}\n'.format(_[0],_[1]) for _ in sorted(_types.items())):
+                    tc.insertText(_)
+#            self.histline.ensureCursorVisible()
 
         self._timer.timeout.connect(updateLabels,Q.Qt.QueuedConnection)
         self._timer.start()
@@ -1001,7 +970,6 @@ class CtrlPlayer(Q.QWidget):
         rate_box.addWidget(pr_label, 1, 1)
         rate_box.addWidget(fr_label, 1, 2)
         rate_box.addWidget(sr_label, 1, 3)
-        rate_box.addWidget(et_label, 2, 0, 1, 4)
 
 #        cmdlinelayout.addLayout(rate_box)
         toolbarlayout.addLayout(cmdlinelayout)
@@ -1019,10 +987,13 @@ class CtrlPlayer(Q.QWidget):
 #            childwidget.propertyModelChanged.connect(tv.setModel)
 #            tv.header().setSectionResizeMode(Q.QHeaderView.Stretch)
             tw.addTab(tv,"properties")
+
+            tw.addTab(et_label,'event types')
             toolbarlayout.addWidget(tw)
 #            self._tw = tw
 #            self._tv = tv
         else:
+            rate_box.addWidget(et_label,2,0,1,4)
             toolbarlayout.addLayout(histloglayout)
 #            self._tw = None
 #            self._tv = None
@@ -1180,16 +1151,6 @@ class Canvas(Q.QMainWindow):
 #        self.playerwidget = self.widget.childwidget
         self.setCentralWidget(tw)
 
-#        self.toolbar = Q.QDockWidget()
-#        self.toolbar.setFeatures(Q.QDockWidget.DockWidgetFloatable| Q.QDockWidget.DockWidgetMovable)
-#        self.toolbar.setWidget(toolbargroup)
-#        self.addDockWidget(Q.Qt.BottomDockWidgetArea,self.toolbar)
-#        self.toolbar.show()
-
-#    def finishPlaylist(self):
-#        self.createPlaylistDock()
-#        self.addDockWidget(Q.Qt.LeftDockWidgetArea,self.propertydock)
-#        self.propertydock.fileMenu =
         fileMenu = self.menuBar().addMenu("&File")
 #        fileMenu = self.propertydock.fileMenu
         fileMenu.addAction("&Open...",cw.openFile,"Ctrl+O")
@@ -1229,23 +1190,6 @@ if __name__ == '__main__':
     parser.add_argument('--nrf','--no-reportflip',action='store_true')
 
     args = parser.parse_args()
-
-#    fmt = Q.QSurfaceFormat.defaultFormat()
-#    fmt.setVersion(4,5)
-#    fmt.setProfile(fmt.CoreProfile)
-#    fmt.setDepthBufferSize(24)
-#    fmt.setRedBufferSize(8)
-#    fmt.setGreenBufferSize(8)
-#    fmt.setBlueBufferSize(8)
-#    fmt.setAlphaBufferSize(8)
-#    fmt.setSwapBehavior(fmt.TripleBuffer)
-#    fmt.setSwapBehavior(fmt.SingleBuffer)
-#    fmt.setRenderableType(fmt.OpenGL)
-#    fmt.setOption(fmt.DeprecatedFunctions,False)
-#    fmt.setOption(fmt.ResetNotification,True)
-#    Q.QSurfaceFormat.setDefaultFormat(fmt)
-
-#    Q.QCoreApplication.setAttribute(Q.Qt.AA_ShareOpenGLContexts)
 
     app = Q.QApplication([])
     media = list()
@@ -1330,13 +1274,6 @@ if __name__ == '__main__':
                 ap.playlist.valueChanged.emit(ap.m.playlist)
             Q.QTimer.singleShot(100,iload)
     Q.QTimer.singleShot(0,load)
-#    Q.QTimer.singleShot(0,lambda *a:ap.try_command('set','playlist-pos','0'))
-#    Q.QTimer.singleShot(0,do_init)
-#    import IPython, ipykernel, threading
-#    kt = threading.Thread(target=IPython.embed)
-#    kt.start()
-#    qc = ipykernel.connect_qtconsole()
-#    IPython.embed_kernel()
     mw.show()
     mw.raise_()
     with SignalWakeupHandler(app):
