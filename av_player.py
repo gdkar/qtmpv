@@ -115,11 +115,21 @@ class AVProperty(Q.QObject):
 #        return getattr(self.context,self.objectName())
 
     @Q.pyqtSlot(object)
+    def getValue(self):
+        try:
+            _value = self.context.get_property(self.objectName())
+            self._emitValueChanged(_value)
+        except:
+            _value = self._value
+        return _value
+
+    @Q.pyqtSlot(object)
     def setValue(self, value):
         if self._value != value:
             self._value = value
             setattr(self.context,self.objectName(),value)
 
+    @Q.pyqtSlot(object)
     def _emitValueChanged(self, value):
         if self._value != value:
             self._value = value
@@ -205,7 +215,7 @@ class AVPlayer(Q.QOpenGLWidget):
     _externalDrive = False
     _get_proc_address = 'ctypes'
     _get_proc_address_debug = True
-    _property_model = None
+#    _property_model = None
 
     novid = Q.pyqtSignal()
     hasvid = Q.pyqtSignal()
@@ -271,6 +281,7 @@ class AVPlayer(Q.QOpenGLWidget):
 
     def __init__(self, *args,fp=None, **kwargs):
         super().__init__(*args,**kwargs)
+#        self._property_model = None
         self.setSizePolicy(Q.QSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Expanding))
         self.paintTimes = deque(maxlen=32)
         self.frameTimes = deque(maxlen=32)
@@ -318,8 +329,9 @@ class AVPlayer(Q.QOpenGLWidget):
         self.fbo = None
         self._width = self.img_width
         self._height = self.img_height
-#        self._property_model = AVTreePropertyModel(player=self)
-#        self.playlist.valueChanged.connect(lambda val: print('new playlist value is {}'.format(val)),no_receiver_check=True)
+        self.playlist.valueChanged.connect(lambda val: print('new playlist value is {}'.format(val)),no_receiver_check=True)
+
+        self._property_model = AVTreePropertyModel(player=self,parent=self)
 
         if isinstance(fp, pathlib.Path):
             fp = fp.resolve().absolute().as_posix()
@@ -329,14 +341,7 @@ class AVPlayer(Q.QOpenGLWidget):
             fp = fp.toString()
         Q.QTimer.singleShot(1, self.update)
         if fp:
-            Q.QTimer.singleShot(0,(lambda : self.try_command('loadfile',fp,'append',_async=True)))
-
-    @Q.pyqtProperty(object)
-    def property_model(self):
-        if self._property_model is None:
-            self._property_model = AVTreePropertyModel(player=self)
-            self.propertyModelChanged.emit(self._property_model)
-        return self._property_model
+            Q.QTimer.singleShot(0,(lambda : self.try_command('loadfile',fp,'append-play',_async=False)))
 
     def command(self,*args, **kwargs):
         self.m.command(*args, **kwargs)
@@ -534,7 +539,6 @@ class AVPlayer(Q.QOpenGLWidget):
         self.wakeup.connect(self.onWakeup,Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
         self.frameSwapped.connect(self.onFrameSwapped)
         self.ogl.set_update_callback(self.wakeup.emit)
-        self.property_model
         self.openglInitialized.emit(Q.QOpenGLContext.currentContext())
 
     @Q.pyqtSlot()
@@ -839,7 +843,7 @@ class CtrlPlayer(Q.QWidget):
             Q.QSizePolicy.Expanding
           , Q.QSizePolicy.Expanding
           , Q.QSizePolicy.Frame))
-        childwidget = self.childwidget = AVPlayer(fp=fp)
+        childwidget = self.childwidget = AVPlayer(fp=fp,parent=None)
         childwidget.setSizePolicy(Q.QSizePolicy(
             Q.QSizePolicy.Expanding
           , Q.QSizePolicy.Expanding
@@ -1005,28 +1009,41 @@ class CtrlPlayer(Q.QWidget):
         histloglayout.addWidget(self.logline )
 
         if use_tabs:
-            tw = Q.QTabWidget(parent=self)
-            toolbarlayout.addWidget(tw)
+            tw = Q.QTabWidget(parent=None)
             tg = Q.QWidget()
             tg.setLayout(histloglayout)
             tw.addTab(tg,"history/log")
-            tv = Q.QTreeView()
+            tv = Q.QTreeView(parent=None)
 #            if childwidget._property_model is not None:
-            tv.setModel(childwidget.property_model)
+            tv.setModel(childwidget._property_model)
 #            childwidget.propertyModelChanged.connect(tv.setModel)
 #            tv.header().setSectionResizeMode(Q.QHeaderView.Stretch)
             tw.addTab(tv,"properties")
-            self._tw = tw
-            self._tv = tv
+            toolbarlayout.addWidget(tw)
+#            self._tw = tw
+#            self._tv = tv
         else:
             toolbarlayout.addLayout(histloglayout)
-            self._tw = None
-            self._tv = None
+#            self._tw = None
+#            self._tv = None
 
         controls_layout.addLayout(toolbarlayout)
         cmdline.submitted.connect(self.onCmdlineAccept,Q.Qt.UniqueConnection|Q.Qt.AutoConnection)
         cmdline.historyChanged.connect(self.redoHistory)
         self.childwidget.logMessage.connect(self.onLogMessage)
+
+#    def tw(self):
+#        return self._tw
+#        _tw = self._tw
+#        if _tw is not None:
+#            return _tw()
+
+#    def tv(self):
+        #_tv = self._tv
+#        return _tv
+#        if _tv is not None:
+#            return _tv()
+
 
     @Q.pyqtSlot()
     def openUrl(self):
@@ -1111,9 +1128,9 @@ class Canvas(Q.QMainWindow):
 #        player._property_model = AVTreePropertyModel(player=player, parent=player)
         if self._use_tree:
             tv = Q.QTreeView()
-#            if player._property_model is not None:
-            tv.setModel(player.property_model)
-#            player.propertyModelChanged.connect(tv.setModel)
+##            if player._property_model is not None:
+            tv.setModel(player._property_model)
+            player.propertyModelChanged.connect(tv.setModel)
             tw.addTab(tv,'tree')
             tv.header().setSectionResizeMode(Q.QHeaderView.Stretch)
 
@@ -1132,29 +1149,27 @@ class Canvas(Q.QMainWindow):
         self.propertydock.show()
 #        self.playlistdock.setWidget(self.playlist)
 
-    @property
-    def ctrlwidget(self):
-        _cw = self._cw
-        if _cw is not None:
-            return _cw()
-
     def __init__(self,*args, fp = None, **kwargs):
         super().__init__(*args, **kwargs)
+#        self.show()
+#        self.raise_()
         self._timer = Q.QTimer()
 #        self._timer.setInterval(int(1000/30))
         self._timer.setTimerType(Q.Qt.PreciseTimer)
 
-        tw = Q.QTabWidget()
-        cw = CtrlPlayer(*args, parent=None, **kwargs)
+        tw = Q.QTabWidget(parent=self)
+        cw = CtrlPlayer(*args,parent=self, **kwargs)
+#        cw.show()
         tw.addTab(cw,"video")
-        cw.childwidget.resize(self.size())
+        tw.setVisible(True)
+#        cw.childwidget.resize(self.size())
         player = cw.childwidget
 #        player._property_model = AVTreePropertyModel(player=player,parent=player)
 #        tv = Q.QTreeView()
 #        tv.setModel(player._property_model)
 #        tw.addTab(tv,"properties")
-        tw.setVisible(True)
-        self._cw = weakref.ref(cw)
+#        tw.setVisible(True)
+#        self.ctrlwidget = cw
         self.playerwidget = player
 
 #        self._timer.timeout.connect(self.update)
@@ -1236,17 +1251,12 @@ if __name__ == '__main__':
     media = list()
     for path in args.path:
         if '=' in path:
-            a,_,b = path.partition('=')
-            try:
-                ap.m.set_property(a,b)
-            except:
-                pass
+            pass
         else:
             media.append(path)
 
     mw = Canvas(fp=media.pop(0) if media else None)
-    mw.show()
-    mw.raise_()
+
     if args.forcerate is not None and args.forcerate:
         mw.forcedFrameRate = args.forcerate
 #    else:
@@ -1303,8 +1313,8 @@ if __name__ == '__main__':
                 ap.m.set_property(a,b)
             except:
                 pass
-        else:
-            media.append(path)
+#        else:
+#            media.append(path)
     print('media: ',media)
     def load(*a):
         print('in load, {}'.format(a))
@@ -1317,6 +1327,7 @@ if __name__ == '__main__':
                 for path in media:
                     ap.try_command('loadfile',path,'append-play',_async=False)
                 ap.playlist_pos = 0
+                ap.playlist.valueChanged.emit(ap.m.playlist)
             Q.QTimer.singleShot(100,iload)
     Q.QTimer.singleShot(0,load)
 #    Q.QTimer.singleShot(0,lambda *a:ap.try_command('set','playlist-pos','0'))
@@ -1326,6 +1337,8 @@ if __name__ == '__main__':
 #    kt.start()
 #    qc = ipykernel.connect_qtconsole()
 #    IPython.embed_kernel()
+    mw.show()
+    mw.raise_()
     with SignalWakeupHandler(app):
         signal.signal(signal.SIGINT, lambda *a:app.quit())
 #        IPython.embed()
