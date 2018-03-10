@@ -16,9 +16,10 @@ from qtproxy import Q
 import mpv
 import av_player
 
-class TreeItem(Q.QObject):
+class TreeItem(object):#Q.QObject):
     def __init__(self, name, player=None, parent=None, model=None):
-        super().__init__(parent=model)
+#        super().__init__(parent=parent)
+        super().__init__()
         self._parent= weakref.ref(parent) if parent else None
         if parent is not None:
             parent.appendChild(self)
@@ -74,16 +75,76 @@ class TreeItem(Q.QObject):
 class LitItem(TreeItem):
     def __init__(self, name, val, player=None, parent=None,model=None):
         super().__init__(name, player=player,parent=parent,model=model)
-#        print('creating LitItem',name,val)
+#        print('creating LitItem',repr(name),repr(val))
         self._val = None
         if isinstance(val, list):
             for n,_sub in enumerate(val):
-                LitItem(name = name+'/{}'.format(n),val=_sub, player=None,parent=parent, model=model)
+                LitItem(name = name+'/{}'.format(n),val=_sub, player=None,parent=self, model=model)
         elif isinstance(val, dict):
             for k,v in val.items():
-                LitItem(name = name+'/{}'.format(k),val=v,player=None,parent=parent,model=model)
+                LitItem(name = name+'/{}'.format(k),val=v,player=None,parent=self,model=model)
         else:
             self._val = val
+
+    def _update(self, _val):
+        if _val != self._val:
+            model = self._model
+            if isinstance(self._val,dict) and isinstance(_val,dict) and set(self._val.keys()) == set(_val.keys()):
+                for k,v in sorted(_val.items()):
+                    name = self._name + '/{}'.format(k)
+                    c = self.findData(name,0)
+                    if c:
+                        c._update(v)
+                self._val = _val.copy()
+                if model:
+                    idx0 = model.indexForItem(self,0)
+                    idx1 = model.indexForItem(self,1)
+                    model.emitDataChanged.emit((idx0,idx1,None))
+
+                return
+            elif isinstance(self._val,list) and isinstance(_val,list) and len(_val) == len(self._val):
+                for n,v in enumerate(_val):
+                    name = self._name + '/{}'.format(n)
+                    c = self.findData(name,0)
+                    if c:
+                        c._update(v)
+                self._val = _val.copy()
+                if model:
+                    idx0 = model.indexForItem(self,0)
+                    idx1 = model.indexForItem(self,1)
+                    model.emitDataChanged.emit((idx0,idx1,None))
+
+                return
+
+            _children = { c._name : c for c in self._children}
+            if len(self._children):
+                self._children.clear()
+            if isinstance(_val, (list,dict)):
+                if isinstance(_val, list):
+                    for n,_sub in enumerate(_val):
+                        name = self._name + '/{}'.format(n)
+                        c = _children.pop(name,None)
+                        if c:
+                            if type(c._val) == type(_sub) and (not isinstance(_sub,(list,dict)) or c._val == _sub):
+                                c._update(_sub)
+                                self.appendChild(c)
+                                continue
+                        LitItem(name = name,val=_sub, player=None,parent=self, model=self._model)
+                elif isinstance(_val, dict):
+                    for k,v in sorted(_val.items()):
+                        name = self._name + '/{}'.format(k)
+                        c = _children.pop(name,None)
+                        if c:
+                            if type(c._val) == type(v) and (not isinstance(v,(list,dict)) or c._val == v):
+                                c._update(v)
+                                self.appendChild(c)
+                                continue
+                        LitItem(name = name,val=v,player=None,parent=self,model=self._model)
+            self._val = _val
+            if model:
+                idx0 = model.indexForItem(self,0)
+                idx1 = model.indexForItem(self,1)
+                model.emitDataChanged.emit((idx0,idx1,None))
 
     def setData(self, column, data):
         return super().setData(column,data)
@@ -123,7 +184,7 @@ class LeafItem(TreeItem):
 
     def _bind_av_property(self, prop):
         if prop is not None:
-            prop.valueChanged.connect(self._update,Q.Qt.QueuedConnection)
+            prop.valueChanged.connect(self._update,Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
             prop_ref = weakref.ref(prop)
             def _disconnect(self):
                 prop = prop_ref()
@@ -146,6 +207,23 @@ class LeafItem(TreeItem):
         if _val != self._val:
             model = self._model
             idx = model.indexForItem(self) if model else None
+            if isinstance(self._val,dict) and isinstance(_val,dict) and set(self._val.keys()) == set(_val.keys()):
+                for k,v in sorted(_val.items()):
+                    name = self._name + '/{}'.format(k)
+                    c = self.findData(name,0)
+                    if c:
+                        c._update(v)
+                self._val = _val.copy()
+                return
+            elif isinstance(self._val,list) and isinstance(_val,list) and len(_val) == len(self._val):
+                for n,v in enumerate(_val):
+                    name = self._name + '/{}'.format(n)
+                    c = self.findData(name,0)
+                    if c:
+                        c._update(v)
+                self._val = _val.copy()
+                return
+            _children = { c._name : c for c in self._children}
             if len(self._children):
                 if model:
                     model.beginRemoveRows(idx, 0, len(self._children))
@@ -159,17 +237,30 @@ class LeafItem(TreeItem):
                     model.beginInsertRows(idx, 0, len(_val))
                 if isinstance(_val, list):
                     for n,_sub in enumerate(_val):
-                        LitItem(name = self._name+'/{}'.format(n),val=_sub, player=None,parent=self, model=self._model)
+                        name = self._name + '/{}'.format(n)
+                        c = _children.pop(name,None)
+                        if c:
+                            if type(c._val) == type(_sub) and (not isinstance(_sub,(list,dict)) or c._val == _sub):
+                                c._update(_sub)
+                                self.appendChild(c)
+                                continue
+                        LitItem(name = name,val=_sub, player=None,parent=self, model=self._model)
                 elif isinstance(_val, dict):
                     for k,v in sorted(_val.items()):
-                        LitItem(name = self._name+'/{}'.format(k),val=v,player=None,parent=self,model=self._model)
+                        name = self._name + '/{}'.format(k)
+                        c = _children.pop(name,None)
+                        if c:
+                            if type(c._val) == type(v) and (not isinstance(v,(list,dict)) or c._val == v):
+                                c._update(v)
+                                self.appendChild(c)
+                                continue
+                        LitItem(name = name,val=v,player=None,parent=self,model=self._model)
                 if model:
                     model.endInsertRows()
-#            if has_children:
-#                self._model.layoutChanged.emit()
-            self._val = _val
+                self._val = _val.copy()
+            else:
+                self._val = _val
             if model:
-#                index_lo = model.index(row = self.row() + 1, column=1,parent=model.parent(index_hi))
                 idx0 = model.indexForItem(self,0)
                 idx1 = model.indexForItem(self,1)
                 model.emitDataChanged.emit((idx0,idx1,None))

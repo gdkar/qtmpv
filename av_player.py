@@ -50,13 +50,20 @@ class AVProperty(Q.QObject):
 
     @Q.pyqtSlot(object)
     def _emitValueChanged(self, value):
+        if value is None:
+            value = self.context.try_get_property(self.objectName(),None)
         if self._value != value:
             self._value = value
             self.valueChanged.emit(value)
 
     @Q.pyqtSlot()
     def forceUpdate(self):
-        self._emitValueChanged(self.context.try_get_property(self.objectName(),None))
+        value = self.context.try_get_property(self.objectName(),None)
+        if value is not None:
+            self._value = value
+            self.valueChanged.emit(value)
+
+#        self._emitValueChanged(self.context.try_get_property(self.objectName(),None))
 
     def __index__(self):
         return int(self)
@@ -81,6 +88,7 @@ class AVProperty(Q.QObject):
 
         reply_userdata = self._emitValueChanged
         ctx_ref = weakref.ref(ctx)
+#        prop = (prop,None)
         def unobserve_cb(val,prop):
             ctx = ctx_ref()
             try:
@@ -155,9 +163,9 @@ class AVPlayer(Q.QOpenGLWidget):
         ,'hr-seek':'yes'
         ,'hr-seek-framedrop':False
         ,'hwdec-preload':True
-        ,'hwdec':'vaapi'
-        ,'opengl-backend':'x11egl'
-        ,'gpu-hwdec-interop':'vaapi-egl'
+        ,'hwdec':'yes'
+        ,'opengl-backend':'drm'
+        ,'gpu-hwdec-interop':'drmprime-drm'
           }
     _reportFlip = False
     _reportedFlip = False
@@ -276,8 +284,8 @@ class AVPlayer(Q.QOpenGLWidget):
 
         self.mpv_event.connect(self.onEvent,Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
 #        self.m.set_wakeup_callback(self.mpv_event.emit)
-#        self.m.set_wakeup_callback_thread(self.mpv_event.emit)
-        self.m.set_wakeup_callback_thread(self.onEvent)
+        self.m.set_wakeup_callback_thread(self.onEvent,maxsize=0)
+#        self.m.set_wakeup_callback(self.mpv_event.emit)
 
         self.m.request_event(self.mpv.EventType.property_change,True)
         self.m.request_event(self.mpv.EventType.video_reconfig,True)
@@ -433,6 +441,8 @@ class AVPlayer(Q.QOpenGLWidget):
                 else:
                     if self.af and not m.af:
                         m.af = self.af
+            self.time_pos.forceUpdate()
+            self.speed.forceUpdate()
         elif event.id is self.mpv.EventType.log_message:
             self.logMessage.emit(event.data)
         elif (event.id is self.mpv.EventType.end_file
@@ -506,7 +516,7 @@ class AVPlayer(Q.QOpenGLWidget):
 #        weakref.finalize(self, lambda : self.ogl.shutdown())
 #        self.ogl.set_update_callback(self.wakeup.emit)
         self.destroyed.connect(lambda:(self.ogl.set_update_callback(None),self.ogl.shutdown()),Q.Qt.DirectConnection)
-        self.ogl.set_update_callback_thread(self.onWakeup)
+        self.ogl.set_update_callback_thread(self.onWakeup,maxsize=2)
 #        self.ogl.set_update_callback(self.wakeup.emit)
         self.openglInitialized.emit(Q.QOpenGLContext.currentContext())
 
