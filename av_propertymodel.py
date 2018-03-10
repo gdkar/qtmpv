@@ -9,14 +9,16 @@ import sys
 import pprint
 import time
 import collections
+import numpy as np
 from qtproxy import Q
 
 #import av
 import mpv
 import av_player
 
-class TreeItem(object):
+class TreeItem(Q.QObject):
     def __init__(self, name, player=None, parent=None, model=None):
+        super().__init__(parent=model)
         self._parent= weakref.ref(parent) if parent else None
         if parent is not None:
             parent.appendChild(self)
@@ -121,7 +123,7 @@ class LeafItem(TreeItem):
 
     def _bind_av_property(self, prop):
         if prop is not None:
-            prop.valueChanged.connect(self._update,Q.Qt.AutoConnection|Q.Qt.UniqueConnection)
+            prop.valueChanged.connect(self._update,Q.Qt.QueuedConnection)
             prop_ref = weakref.ref(prop)
             def _disconnect(self):
                 prop = prop_ref()
@@ -133,6 +135,7 @@ class LeafItem(TreeItem):
                     self._prop = None
             self._finalizer = weakref.finalize(self, _disconnect, self)
             prop.destroyed.connect(self._detach,Q.Qt.DirectConnection|Q.Qt.UniqueConnection)
+            self._update(prop.value())
 
     def _detach(self):
         if self._finalizer is not None:
@@ -140,25 +143,6 @@ class LeafItem(TreeItem):
             self._finalizer = None
 
     def _update(self,_val):
-        if self._prop is None:
-            if self.player and self._attr:
-                try:
-                    self._prop = self.player.get_property(self._attr)
-                    print(self._prop)
-                except:
-                    pass
-#                    self._prop  = None
-            if self._prop is not None:
-                self._bind_av_property(self._prop)
-                self._attr = self._prop.objectName()
-        if self._prop is not None:
-            try:
-                _tval = self._prop.value()
-                if _tval is not None:
-                    _val = _tval
-            except:
-                pass
-
         if _val != self._val:
             model = self._model
             idx = model.indexForItem(self) if model else None
@@ -188,7 +172,7 @@ class LeafItem(TreeItem):
 #                index_lo = model.index(row = self.row() + 1, column=1,parent=model.parent(index_hi))
                 idx0 = model.indexForItem(self,0)
                 idx1 = model.indexForItem(self,1)
-                model.dataChanged.emit(idx0,idx1)
+                model.emitDataChanged.emit((idx0,idx1,None))
 
     def setData(self, column, data):
         if column == 1 and self._prop is not None:
@@ -201,22 +185,32 @@ class LeafItem(TreeItem):
 
     def data(self, column):
         if column == 1:
-            if self._prop is not None:
-                return self._prop.value()
+            return self._val
+#            if self._prop is not None:
+#                return self._prop.value()
         return super().data(column)
 
     def columnCount(self):
         return 2
 
 class AVTreePropertyModel(Q.QAbstractItemModel):
+    emitDataChanged = Q.pyqtSignal(tuple)
+
+    @Q.pyqtSlot(tuple)
+    def onEmitDataChanged(self, args):
+        _lo, _hi, _rols = args
+        self.dataChanged.emit(_lo, _hi, _rols or [])
+
     def __init__(self, *args, **kwargs):
         player = kwargs.pop('player', None)
         self._player = player
         super().__init__(*args, **kwargs)
+        self.emitDataChanged.connect(self.onEmitDataChanged,Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
         self._headerData = ["name","value"]
         self._rootItem = TreeItem(name='root',player=player)
         self.setupModelData(player)
         print (self.__class__.__name__, 'rowCount() is ', self.rowCount(Q.QModelIndex()))
+
     def columnCount(self, parent):
         if parent.isValid():
             return parent.internalPointer().columnCount()

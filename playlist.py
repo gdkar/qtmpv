@@ -25,7 +25,9 @@ class PlayList(Q.QListWidget):
         print(filePath)
         if not isinstance(where,av_player.AVPlayer):
             where = self._parent.getPlayerAt(where)
-        for idx, it in enumerate(where.playlist.value()):
+##        print('where.playlist.values() = ',where.playlist.value())
+#        print('where.m.playlist = ',where.m.playlist)
+        for idx, it in enumerate(where.m.playlist):
             if filePath.samefile(it['filename']):
                 where.m.playlist_pos = idx
                 return
@@ -35,7 +37,7 @@ class PlayList(Q.QListWidget):
 #        if w:
 #            w.idealConfig()
 #            w.show()
-        for idx, it in enumerate(where.playlist.value()):
+        for idx, it in enumerate(where.m.playlist):
             if filePath.samefile(it['filename']):
                 where.playlist_pos.setValue(idx)
                 return
@@ -48,27 +50,27 @@ class PlayList(Q.QListWidget):
         self.setAttribute(Q.Qt.WA_DeleteOnClose)
         self.player = None
         self._parent = parent
-        self.itemDoubleClicked.connect(self.on_clicked)
+        self.itemDoubleClicked.connect(self.on_clicked,Q.Qt.AutoConnection)
         self.setContextMenuPolicy(Q.Qt.ActionsContextMenu)
         self.updateActions()
 
         if self.player and isinstance(self.player,av_player.AVPlayer):
-            self.player.playlist.valueChanged.connect(self.onPlaylistChanged)
-            self.player.playlist_pos.valueChanged.connect(self.onPlaylist_posChanged)
+            self.player.playlist.valueChanged.connect(self.onPlaylistChanged  ,Q.Qt.AutoConnection)
+            self.player.playlist_pos.valueChanged.connect(self.onPlaylist_posChanged,Q.Qt.AutoConnection)
     def updateActions(self):
         acts = self.actions()
         for a in acts:
             if a:
                 self.removeAction(a)
         a = Q.QAction("&Open near",self)
-        a.triggered.connect(self.openFileNear)
+        a.triggered.connect(self.openFileNear,Q.Qt.AutoConnection)
         self.addAction(a)
         a = Q.QAction("Load to new &player",self)
-        a.triggered.connect(partial(self.__loadfileAction,-1))
+        a.triggered.connect(partial(self.__loadfileAction,-1),Q.Qt.AutoConnection)
         self.addAction(a)
         for p in self.players:
             a = Q.QAction("Load to player {}".format(p.index),self)
-            a.triggered.connect(partial(self.__loadfileAction,p))
+            a.triggered.connect(partial(self.__loadfileAction,p),Q.Qt.AutoConnection)
             self.addAction(a)
         self.playerChanged.emit(self.player)
 
@@ -88,8 +90,8 @@ class PlayList(Q.QListWidget):
         self.clear()
         self.player = p
         if p:
-            self.player.playlist.valueChanged.connect(self.onPlaylistChanged)
-            self.player.playlist_pos.valueChanged.connect(self.onPlaylist_posChanged)
+            self.player.playlist.valueChanged.connect(self.onPlaylistChanged ,Q.Qt.AutoConnection)
+            self.player.playlist_pos.valueChanged.connect(self.onPlaylist_posChanged,Q.Qt.QueuedConnection)
             self.player.playlist.valueChanged.emit(self.player.playlist.value())
         self.playerChanged.emit(p)
     def openFileNear(self):

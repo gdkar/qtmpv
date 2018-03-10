@@ -52,7 +52,7 @@ if renderable:
     except:
         pass
 
-renderable = posix.environ.get(b'AV_PLAYER_OGL_SWAP_BEHAVIOR',b'DoubleBuffer')
+renderable = posix.environ.get(b'AV_PLAYER_OGL_SWAP_BEHAVIOR',b'TripleBuffer')
 if renderable:
     renderable = renderable.decode('utf8')
     try:
@@ -66,12 +66,13 @@ if renderable:
 
 try: fmt.setOption(fmt.DebugContext,int(posix.environ.get(b'AV_PLAYER_OGL_DEBUG_CONTEXT', b'0')))
 except: pass
-try: fmt.setSwapInterval(int(posix.environ.get(b'AV_PLAYER_OGL_SWAP_INTERVAL', b'0')))
+try: fmt.setSwapInterval(int(posix.environ.get(b'AV_PLAYER_OGL_SWAP_INTERVAL', b'1')))
 except: pass
 try: fmt.setSamples(int(posix.environ.get(b'AV_PLAYER_OGL_SAMPLES', b'0')))
 except: pass
 
 QSurfaceFormat.setDefaultFormat(fmt)
 QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
+QCoreApplication.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings)
 
 from PyQt5 import Qt as Q, QtCore as QC, QtWidgets as QW, QtGui as QG, QtOpenGL as QOGL

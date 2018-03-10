@@ -1,0 +1,95 @@
+#! /usr/bin/env python
+
+import sys,argparse
+from qtproxy import Q
+
+from av_player import *
+%gui qt5
+
+app = Q.QApplication.instance() or Q.QApplication([])
+
+print(app)
+
+#app.lastWindowClosed.connect(lambda :(app.quit()),Q.Qt.DirectConnection)
+app.setQuitOnLastWindowClosed(True)
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-f', '--format')
+parser.add_argument('--extra',default=None,action='store')
+parser.add_argument('--getprocaddress',default='qt',action='store')
+parser.add_argument('--getprocaddressquiet',action='store_true')
+parser.add_argument('--times_window',default=None,type=float)
+parser.add_argument('--forcerate',type=float,default=None)
+parser.add_argument('--nrf','--no-reportflip',action='store_true')
+parser.add_argument('path', nargs='+')
+
+args = parser.parse_args()
+
+media = list()
+for path in args.path:
+    if '=' in path:
+        pass
+    else:
+        media.append(path)
+
+mw = Canvas()
+ap = mw.playerwidget
+if args.getprocaddress:
+    ap._get_proc_address = args.getprocaddress
+if args.getprocaddressquiet:
+    ap._get_proc_address_debug = False
+if args.times_window is not None:
+    ap._timesWindow = args.times_window * 1e6
+def dump_fmt(fmt):
+    print('OpenGLFormat:\n')
+    print('version={}'.format(fmt.version()))
+    print('samples={}'.format(fmt.samples()))
+    print('redBufferSize={}'.format(fmt.redBufferSize()))
+    print('greenBufferSize={}'.format(fmt.greenBufferSize()))
+    print('blueBufferSize={}'.format(fmt.blueBufferSize()))
+    print('alphaBufferSize={}'.format(fmt.alphaBufferSize()))
+    print('depthBufferSize={}'.format(fmt.depthBufferSize()))
+    print('stencilBufferSize={}'.format(fmt.stencilBufferSize()))
+    print('swapBehavior={}'.format(fmt.swapBehavior()))
+    print('swapInterval={}'.format(fmt.swapInterval()))
+    print('debugContext={}'.format(fmt.testOption(fmt.DebugContext)))
+    print('deprecatedFunctions={}'.format(fmt.testOption(fmt.DeprecatedFunctions)))
+    print('renderable={}'.format(fmt.renderableType()))
+
+ap.openglInitialized.connect(lambda x:dump_fmt(x.format()))
+if args.extra:
+    extra = args.extra.split()
+    for e in extra:
+        if '=' in e:
+            a,_,b = e.partition('=')
+            try:
+                ap.m.set_property(a,b)
+            except:
+                pass
+for path in args.path:
+    if '=' in path:
+        a,_,b = path.partition('=')
+        try:
+            ap.m.set_property(a,b)
+        except:
+            pass
+#        else:
+#            media.append(path)
+mw.show()
+
+print('media: ',media)
+for path in media:
+    ap.try_command('loadfile',path,'append-play')
+
+
+#app.exec_()
+
+#ap.try_command('async','set','vf', "lavfi=[format=rgba,lutrgb=a=(maxval-minval)*5/6.]",_async=True)
+
+#ap = None
+
+#with SignalWakeupHandler(app):
+#    signal.signal(signal.SIGINT, lambda *a:app.quit())
+#    signal.signal(signal.SIGQUIT, lambda *a:app.quit())
+
+#    sys.exit(app.exec_())

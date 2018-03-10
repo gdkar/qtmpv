@@ -8,6 +8,8 @@ class TopWindow(Q.QMainWindow):
     shutdown = Q.pyqtSignal()
     cascadeSubWindows = Q.pyqtSignal()
     childChanged = Q.pyqtSignal(object)
+    _use_tabs = False
+    _use_mdi  = False
 
     def createPlaylistDock(self):
         from playlist import PlayList
@@ -86,7 +88,6 @@ class TopWindow(Q.QMainWindow):
     def players(self):
         return self.findChildren(AVPlayer)
 
-
     def childEvent(self,evt):
         self.childChanged.emit(evt)
 
@@ -109,7 +110,7 @@ class TopWindow(Q.QMainWindow):
         fileMenu.addAction("Open &Url...",lambda:self.openUrl(-1),"Ctrl_U")
         fileMenu.addAction("E&xit",self.close,"Ctrl+Q")
 
-        self.childChanged.connect(self.playlist.updateActions)
+        self.childChanged.connect(self.playlist.updateActions,Q.Qt.DirectConnection)
 
         cf_bar = self.addToolBar("Crossfade")
         cf_bar.setFloatable(True)
@@ -117,8 +118,8 @@ class TopWindow(Q.QMainWindow):
         cf = self.crossfade = Q.QSlider(Q.Qt.Horizontal)
         cf.setRange(-100,100)
         cf.setEnabled(True)
-        cf.valueChanged.connect(self.crossfadeChanged)
-        self.crossfadeChanged.connect(self.onCrossfadeChanged)
+#        cf.valueChanged.connect(self.crossfadeChanged)
+#        self.crossfadeChanged.connect(self.onCrossfadeChanged)
         cf_bar.addWidget(cf)
 
         cf_bar = self.addToolBar(Q.Qt.BottomToolBarArea,cf_bar)
@@ -129,17 +130,19 @@ class TopWindow(Q.QMainWindow):
         winMenu.addAction("&Tile",mdiArea.tileSubWindows)
 
         cascadeAction = winMenu.addAction("&Cascade",self.cascadeSubWindows)
-        cascadeAction.triggered.connect(mdiArea.cascadeSubWindows)
+        cascadeAction.triggered.connect(mdiArea.cascadeSubWindows,Q.Qt.DirectConnection)
         winMenu.addAction("Ne&xt",mdiArea.activateNextSubWindow,Q.QKeySequence.NextChild)
         winMenu.addAction("&Prev",mdiArea.activatePreviousSubWindow,Q.QKeySequence.PreviousChild)
-        mdiArea.subWindowActivated.connect(lambda *x: self.playlist.setPlayer(mdiArea.activeSubWindow()))
+        mdiArea.subWindowActivated.connect(lambda : self.playlist.setPlayer(mdiArea.activeSubWindow()),Q.Qt.DirectConnection)
         self.destroyed.connect(self.shutdown,Q.Qt.DirectConnection)
         self._timer = Q.QTimer()
         self._timer.setInterval(int(1000/30))
 #        self._timer.setTimerType(Q.Qt.PreciseTimer)
-        self._timer.timeout.connect(self.update)
+        self._timer.timeout.connect(self.update,Q.Qt.DirectConnection)
         self._timer.start()
         frate = kwargs.pop('forcerate',None)
+        self._use_tabs = bool(int(kwargs.pop('use_tabs',self._use_tabs)))
+        self._use_mdi  = bool(int(kwargs.pop('use_mdi',self._use_mdi)))
         if frate:
             try: self.forcedFrameRate = float(frate)
             except: pass
@@ -159,27 +162,58 @@ class TopWindow(Q.QMainWindow):
        self._timer.setInterval(int(1000/val))
 
     def makeWidgetFor(self,*args, **kwargs):
-        tw = Q.QTabWidget(parent=self)
-        cw = CtrlPlayer(*args, parent=None, **kwargs)
-        tw.addTab(cw,"video")
-
-        cw.childwidget.resize(self.size())
+        plst = [self.playlist.item(i).path for i in range(self.playlist.count())] if self.playlist else []
+        plst = [_.resolve().absolute().as_posix() for _ in plst if _]
+#        print(plst)
+#        kwargs.update(self._options)
+        print('args',args)
+        print('kwargs',kwargs)
+        cw = CtrlPlayer(*args, fp=plst,**kwargs)
         player = cw.childwidget
-        if player._property_model is None:
-            player._property_model = AVTreePropertyModel(player=player,parent=player)
-        tv = Q.QTreeView()
-        tv.setModel(player._property_model)
-        tw.addTab(tv,"properties")
-        self._timer.timeout.connect(cw.update)
+
+        if self._use_tabs:
+            tw = Q.QTabWidget(parent=None)
+            tw.addTab(cw,"video")
+
+            cw.childwidget.resize(self.size())
+#        if player._property_model is None:
+#            player._property_model = AVTreePropertyModel(player=player,parent=player)
+            tv = Q.QTreeView()
+            tv.setModel(player.getPropertyModel())
+            player.propertyModelChanged.connect(lambda val:tv.setModel(val))
+            tw.addTab(tv,"properties")
+        else:
+            tw = cw
+
+        self._timer.timeout.connect(cw.update,Q.Qt.DirectConnection)
         player.index = self.next_id
         player._playlist = self.playlist
         self.next_id += 1
 #        self.cascadeSubWindows.connect(cw.idealConfig)
 #        self.crossfadeChanged.connect(cw.onCrossfadeChanged)
-        self.mdiArea.addSubWindow(tw)
-        tw.adjustSize()
-        tw.parent().adjustSize()
-        tw.parent().update()
+        if self._use_mdi:
+            self.mdiArea.addSubWindow(tw)
+            tw.adjustSize()
+            tw.parent().adjustSize()
+            tw.parent().update()
+        else:
+            mdi = Q.QMainWindow(parent=self,flags=Q.Qt.Dialog)
+            mdi.show()
+            mdi.raise_()
+            mdi.setCentralWidget(tw)
+
         tw.destroyed.connect(tw.parent().close,Q.Qt.DirectConnection)
         tw.setVisible(True)
+        player.playlist.forceUpdate()
+        for _ in plst:
+            player.try_command('loadfile',_,'append-play',_async=False)
+#        if self.playlist:
+#            for item in self.playlist.items():
+#                print(item)
+#                print(item.path,item.path.as_posix())
+#                try:
+#                    player.m.command('loadfile',item.path.as_posix(),'append-play',_async=False)
+#                except:
+#                    pass
+
         return player
