@@ -136,7 +136,7 @@ class TopWindow(Q.QMainWindow):
         mdiArea.subWindowActivated.connect(lambda : self.playlist.setPlayer(mdiArea.activeSubWindow()),Q.Qt.DirectConnection)
         self.destroyed.connect(self.shutdown,Q.Qt.DirectConnection)
         self._timer = Q.QTimer()
-        self._timer.setInterval(int(1000/30))
+        self._timer.setInterval(int(1000/10))
 #        self._timer.setTimerType(Q.Qt.PreciseTimer)
         self._timer.timeout.connect(self.update,Q.Qt.DirectConnection)
         self._timer.start()

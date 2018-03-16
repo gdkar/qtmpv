@@ -50,8 +50,8 @@ class AVProperty(Q.QObject):
 
     @Q.pyqtSlot(object)
     def _emitValueChanged(self, value):
-        if value is None:
-            value = self.context.try_get_property(self.objectName(),None)
+#        if value is None:
+#            value = self.context.try_get_property(self.objectName(),None)
         if self._value != value:
             self._value = value
             self.valueChanged.emit(value)
@@ -129,13 +129,13 @@ class AVPlayer(Q.QOpenGLWidget):
         ,'input-default-bindings':False
         ,'input_vo_keyboard':False
         ,'keep_open':True
-#        ,'gapless_audio':True
+        ,'gapless_audio':True
         ,'osc':False
         ,'load_scripts':False
         ,'ytdl':True
         ,'vo':'libmpv'
-        ,'opengl-fbo-format':'rgba16f'
-        ,'alpha':'blend-tiles'
+        ,'opengl-fbo-format':'rgba16'
+        ,'alpha':'no'
         ,'opengl-es':'auto'
         ,'opengl-swapinterval':1
         ,'opengl-waitvsync':False
@@ -144,7 +144,7 @@ class AVPlayer(Q.QOpenGLWidget):
         ,'tscale-wparam': 1.0
         ,'tscale':'gaussian'
 #        ,'scale':'spline36'
-        ,'sws-scaler':'sinc'
+#        ,'sws-scaler':'sinc'
         ,'interpolation':True
         ,'video-sync':'display-resample'
         ,'display-fps':60.0
@@ -154,10 +154,11 @@ class AVPlayer(Q.QOpenGLWidget):
 #        ,'vo-vaapi-scaled-osd':True
 #        ,'vo-vdpau-hqscaling':9
         ,'audio-pitch-correction':True
-        ,'video-latency-hacks':False
+        ,'video-timing-offset':0
+        ,'video-latency-hacks':True
         ,'pulse-latency-hacks':False
-        ,'pulse-buffer':1024
-        ,'audio-buffer':0.125
+#        ,'pulse-buffer':1024
+#        ,'audio-buffer':0.125
 #        ,'vd-lavc-fast':True
 #        ,'vd-lavc-show-all':True
         ,'hr-seek':'yes'
@@ -181,6 +182,7 @@ class AVPlayer(Q.QOpenGLWidget):
     reconfig = Q.pyqtSignal(int,int)
     fullscreen = Q.pyqtSignal(bool)
     wakeup = Q.pyqtSignal()
+    doWakeup = Q.pyqtSignal(object)
     mpv_event = Q.pyqtSignal()
     logMessage = Q.pyqtSignal(object)
     just_die = Q.pyqtSignal()
@@ -247,7 +249,7 @@ class AVPlayer(Q.QOpenGLWidget):
         self.paintTimes = deque(maxlen=32)
         self.frameTimes = deque(maxlen=32)
         self.swapTimes  = deque(maxlen=32)
-        self.eventTimes = deque(maxlen=None)
+        self.eventTimes = deque(maxlen=2000)
         self.setMouseTracking(True)
         self._updated = False
         self._timesWindow = 1e6
@@ -269,6 +271,9 @@ class AVPlayer(Q.QOpenGLWidget):
         self.destroyed.connect(self.just_die,Q.Qt.DirectConnection)
         self.destroyed.connect(lambda:(m.set_wakeup_callback(None),m.shutdown()),Q.Qt.DirectConnection)
 
+
+        for t in mpv.EventType:
+            self.m.request_event(t, t not in (mpv.EventType.tick,mpv.EventType.none))
         self.m.request_event(self.mpv.EventType.property_change,True)
         self.m.request_event(self.mpv.EventType.video_reconfig,True)
         self.m.request_event(self.mpv.EventType.audio_reconfig,True)
@@ -284,8 +289,8 @@ class AVPlayer(Q.QOpenGLWidget):
 
         self.mpv_event.connect(self.onEvent,Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
 #        self.m.set_wakeup_callback(self.mpv_event.emit)
-        self.m.set_wakeup_callback_thread(self.onEvent,maxsize=0)
-#        self.m.set_wakeup_callback(self.mpv_event.emit)
+#        self.m.set_wakeup_callback_thread(self.onEvent,maxsize=0)
+        self.m.set_wakeup_callback_thread(self.onEvent,maxsize=4)
 
         self.m.request_event(self.mpv.EventType.property_change,True)
         self.m.request_event(self.mpv.EventType.video_reconfig,True)
@@ -485,6 +490,7 @@ class AVPlayer(Q.QOpenGLWidget):
                     print(e)
     @Q.pyqtSlot()
     def onWakeup(self):
+#        self.doWakeup.emit(self.m.time)
         self.frameTimeAppend(self.m.time)
         self.update()
 
@@ -511,12 +517,14 @@ class AVPlayer(Q.QOpenGLWidget):
 #        self.ogl.init_gl(getprocaddr,None)
 
         self.wakeup.connect(self.onWakeup,Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
-        self.frameSwapped.connect(self.onFrameSwapped)
+        self.doWakeup.connect(self.frameTimeAppend,Q.Qt.QueuedConnection)
+        self.frameSwapped.connect(self.onFrameSwapped,Q.Qt.DirectConnection)
         ogl = self.ogl
 #        weakref.finalize(self, lambda : self.ogl.shutdown())
 #        self.ogl.set_update_callback(self.wakeup.emit)
         self.destroyed.connect(lambda:(self.ogl.set_update_callback(None),self.ogl.shutdown()),Q.Qt.DirectConnection)
-        self.ogl.set_update_callback_thread(self.onWakeup,maxsize=2)
+#        self.ogl.set_update_callback_thread(self.wakeup.emit)
+        self.ogl.set_update_callback(self.onWakeup)
 #        self.ogl.set_update_callback(self.wakeup.emit)
         self.openglInitialized.emit(Q.QOpenGLContext.currentContext())
 
@@ -1123,10 +1131,10 @@ class Canvas(Q.QMainWindow):
 #        cw.childwidget.resize(self.size())
         player = cw.childwidget
 #        player._property_model = AVTreePropertyModel(player=player,parent=player)
-        tv = Q.QTreeView()
-        tv.setModel(player._property_model)
-        tw.addTab(tv,"properties")
-        tw.setVisible(True)
+#        tv = Q.QTreeView()
+#c        tv.setModel(player._property_model)
+ #       tw.addTab(tv,"properties")
+ #       tw.setVisible(True)
 #        self.ctrlwidget = cw
         self.playerwidget = player
 

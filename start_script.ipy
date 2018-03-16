@@ -77,14 +77,20 @@ for path in args.path:
 #            media.append(path)
 mw.show()
 
+
 print('media: ',media)
 for path in media:
     ap.try_command('loadfile',path,'append-play')
 
+#ap.try_command('set','vf', "scale=w=2*iw:h=2*ih")
+
+#ap.m.alpha = 'no'
+#ap.m.video_unscaled = True
+ap.try_command('async','set','vf', "scale=w=2*iw:h=2*ih")#,format=rgba,lutrgb=a=(maxval-minval)*5/6")
+
 
 #app.exec_()
 
-#ap.try_command('async','set','vf', "lavfi=[format=rgba,lutrgb=a=(maxval-minval)*5/6.]",_async=True)
 
 #ap = None
 

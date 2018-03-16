@@ -96,10 +96,10 @@ class LitItem(TreeItem):
                     if c:
                         c._update(v)
                 self._val = _val.copy()
-                if model:
-                    idx0 = model.indexForItem(self,0)
-                    idx1 = model.indexForItem(self,1)
-                    model.emitDataChanged.emit((idx0,idx1,None))
+#                if model:
+#                    idx0 = model.indexForItem(self,0)
+#                    idx1 = model.indexForItem(self,1)
+#                    model.emitDataChanged.emit((idx0,idx1,None))
 
                 return
             elif isinstance(self._val,list) and isinstance(_val,list) and len(_val) == len(self._val):
@@ -109,10 +109,10 @@ class LitItem(TreeItem):
                     if c:
                         c._update(v)
                 self._val = _val.copy()
-                if model:
-                    idx0 = model.indexForItem(self,0)
-                    idx1 = model.indexForItem(self,1)
-                    model.emitDataChanged.emit((idx0,idx1,None))
+#                if model:
+#                    idx0 = model.indexForItem(self,0)
+#                    idx1 = model.indexForItem(self,1)
+#                    model.emitDataChanged.emit((idx0,idx1,None))
 
                 return
 
@@ -213,7 +213,12 @@ class LeafItem(TreeItem):
                     c = self.findData(name,0)
                     if c:
                         c._update(v)
-                self._val = _val.copy()
+                self._val = _val
+                if model:
+                    idx0 = model.indexForItem(self,0)
+                    idx1 = model.indexForItem(self,1)
+                    model.emitDataChanged.emit((idx0,idx1,None))
+
                 return
             elif isinstance(self._val,list) and isinstance(_val,list) and len(_val) == len(self._val):
                 for n,v in enumerate(_val):
@@ -221,7 +226,12 @@ class LeafItem(TreeItem):
                     c = self.findData(name,0)
                     if c:
                         c._update(v)
-                self._val = _val.copy()
+                self._val = _val
+                if model:
+                    idx0 = model.indexForItem(self,0)
+                    idx1 = model.indexForItem(self,1)
+                    model.emitDataChanged.emit((idx0,idx1,None))
+
                 return
             _children = { c._name : c for c in self._children}
             if len(self._children):
@@ -257,7 +267,7 @@ class LeafItem(TreeItem):
                         LitItem(name = name,val=v,player=None,parent=self,model=self._model)
                 if model:
                     model.endInsertRows()
-                self._val = _val.copy()
+                self._val = _val
             else:
                 self._val = _val
             if model:
