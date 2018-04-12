@@ -126,15 +126,16 @@ class AVPlayer(Q.QOpenGLWidget):
     base_options = {
          'load-unsafe-playlists':True
         ,'prefetch-playlist':True
-        ,'input-default-bindings':False
+        ,'input-default-bindings':True
+        ,'deiniterlace':True
         ,'input_vo_keyboard':False
         ,'keep_open':True
         ,'gapless_audio':True
-        ,'osc':False
-        ,'load_scripts':False
+        ,'osc':'yes'
+        ,'load-scripts':True
         ,'ytdl':True
         ,'vo':'libmpv'
-        ,'opengl-fbo-format':'rgba16'
+        ,'opengl-fbo-format':'rgba32f'
         ,'alpha':'no'
         ,'opengl-es':'auto'
         ,'opengl-swapinterval':1
@@ -151,22 +152,26 @@ class AVPlayer(Q.QOpenGLWidget):
         ,'interpolation-threshold':0.0
         ,'interpolation':True
         ,'vo-vaapi-scaling':'hq'
-#        ,'vo-vaapi-scaled-osd':True
-#        ,'vo-vdpau-hqscaling':9
+        ,'vo-vaapi-scaled-osd':True
+        ,'vo-vdpau-hqscaling':9
         ,'audio-pitch-correction':True
-        ,'video-timing-offset':0
+        ,'video-timing-offset':1/120
         ,'video-latency-hacks':True
         ,'pulse-latency-hacks':False
 #        ,'pulse-buffer':1024
 #        ,'audio-buffer':0.125
-#        ,'vd-lavc-fast':True
-#        ,'vd-lavc-show-all':True
+        ,'vd-lavc-fast':False
+        ,'vd-lavc-show-all':True
+        ,'player-operation-mode':'pseudo-gui'
         ,'hr-seek':'yes'
         ,'hr-seek-framedrop':False
-        ,'hwdec-preload':True
+        ,'hwdec-preload':'all'
         ,'hwdec':'yes'
-        ,'opengl-backend':'drm'
-        ,'gpu-hwdec-interop':'drmprime-drm'
+        ,'opengl-backend':'x11vk'
+        ,'gpu-hwdec-interop':'all'#'vaapi-egl'
+        ,'gpu-api':'vulkan'#'vaapi-egl'
+        ,'hwdec-image-format':'vaapi_vld'
+        ,'hwdec-codecs':'all'
           }
     _reportFlip = False
     _reportedFlip = False
@@ -510,7 +515,7 @@ class AVPlayer(Q.QOpenGLWidget):
         else:
             getprocaddr = _get_proc_address
 
-        self.ogl = self.m.create_render_context(getprocaddr,None)
+        self.render_gl = self.m.create_render_context(getprocaddr,None)
 #        create_render_context(getprocaddr,None)
 #        self.ogl = self.m.opengl_cb_context
         #(getprocaddr,None)
@@ -519,12 +524,12 @@ class AVPlayer(Q.QOpenGLWidget):
         self.wakeup.connect(self.onWakeup,Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
         self.doWakeup.connect(self.frameTimeAppend,Q.Qt.QueuedConnection)
         self.frameSwapped.connect(self.onFrameSwapped,Q.Qt.DirectConnection)
-        ogl = self.ogl
+        render_gl = self.render_gl
 #        weakref.finalize(self, lambda : self.ogl.shutdown())
 #        self.ogl.set_update_callback(self.wakeup.emit)
-        self.destroyed.connect(lambda:(self.ogl.set_update_callback(None),self.ogl.shutdown()),Q.Qt.DirectConnection)
+        self.destroyed.connect(lambda:(self.render_gl.set_update_callback(None),self.render_gl.shutdown()),Q.Qt.DirectConnection)
 #        self.ogl.set_update_callback_thread(self.wakeup.emit)
-        self.ogl.set_update_callback(self.onWakeup)
+        self.render_gl.set_update_callback(self.onWakeup)
 #        self.ogl.set_update_callback(self.wakeup.emit)
         self.openglInitialized.emit(Q.QOpenGLContext.currentContext())
 
@@ -534,7 +539,7 @@ class AVPlayer(Q.QOpenGLWidget):
         if self._updated:
             self._updated = False
         if self.reportFlip:
-            self.ogl.report_flip()
+            self.render_gl.report_flip()
             self._reportedFlip = True
 
     @property
@@ -561,7 +566,7 @@ class AVPlayer(Q.QOpenGLWidget):
 
     def paintGL(self):
         self.paintTimeAppend(self.m.time)
-        self.ogl.draw(self.defaultFramebufferObject(),self._width,-self._height)
+        self.render_gl.draw(self.defaultFramebufferObject(),self._width,-self._height)
         self._updated = True
 
 class CmdLine(Q.QLineEdit):

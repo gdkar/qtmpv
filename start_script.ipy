@@ -86,7 +86,7 @@ for path in media:
 
 #ap.m.alpha = 'no'
 #ap.m.video_unscaled = True
-ap.try_command('async','set','vf', "scale=w=2*iw:h=2*ih")#,format=rgba,lutrgb=a=(maxval-minval)*5/6")
+#ap.try_command('async','set','vf', "scale=w=2*iw:h=2*ih")#,format=rgba,lutrgb=a=(maxval-minval)*5/6")
 
 
 #app.exec_()
