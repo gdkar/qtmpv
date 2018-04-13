@@ -147,7 +147,7 @@ class TopWindow(Q.QMainWindow):
             try: self.forcedFrameRate = float(frate)
             except: pass
         self._options,media = AVPlayer.get_options(*args)
-
+        print('options: ',self._options)
         p = self.getPlayerAt(-1)
         self.playlist.setPlayer(p)
         if media:
@@ -165,11 +165,16 @@ class TopWindow(Q.QMainWindow):
         plst = [self.playlist.item(i).path for i in range(self.playlist.count())] if self.playlist else []
         plst = [_.resolve().absolute().as_posix() for _ in plst if _]
 #        print(plst)
-#        kwargs.update(self._options)
+        kwargs.update(self._options)
         print('args',args)
         print('kwargs',kwargs)
         cw = CtrlPlayer(*args, fp=plst,**kwargs)
         player = cw.childwidget
+        for k,v in kwargs.items():
+            try:
+                player.m.set_property(k,v)
+            except:
+                pass
 
         if self._use_tabs:
             tw = Q.QTabWidget(parent=None)
@@ -179,7 +184,9 @@ class TopWindow(Q.QMainWindow):
 #        if player._property_model is None:
 #            player._property_model = AVTreePropertyModel(player=player,parent=player)
             tv = Q.QTreeView()
-            tv.setModel(player.getPropertyModel())
+            if player._property_model is not None:
+                tv.setModel(player._property_model)
+#            tv.setModel(player.getPropertyModel())
             player.propertyModelChanged.connect(lambda val:tv.setModel(val))
             tw.addTab(tv,"properties")
         else:

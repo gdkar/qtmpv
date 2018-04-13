@@ -22,6 +22,27 @@ import mpv
 from av_propertymodel import *
 import qtconsole
 
+def pop_or_default(d, cls, *it, default=None):
+    for name in it:
+        try:
+            val = cls(d.pop(name))
+            return val
+        except:
+            pass
+
+    return default
+
+def pop_or_raise(d, cls, *it):
+    for name in it:
+        try:
+            val = cls(d.pop(name))
+            return val
+        except KeyError as e:
+            pass
+        except Exception as e:
+            print(e)
+
+    raise KeyError(name)
 
 class AVProperty(Q.QObject):
     mpv = __import__('mpv')
@@ -135,7 +156,7 @@ class AVPlayer(Q.QOpenGLWidget):
         ,'load-scripts':True
         ,'ytdl':True
         ,'vo':'libmpv'
-        ,'opengl-fbo-format':'rgba32f'
+#        ,'opengl-fbo-format':'rgba32f'
         ,'alpha':'no'
         ,'opengl-es':'auto'
         ,'opengl-swapinterval':1
@@ -144,10 +165,12 @@ class AVPlayer(Q.QOpenGLWidget):
         ,'tscale-radius':4.0
         ,'tscale-wparam': 1.0
         ,'tscale':'gaussian'
+#        ,'tscale':'bilinear'
 #        ,'scale':'spline36'
 #        ,'sws-scaler':'sinc'
         ,'interpolation':True
         ,'video-sync':'display-resample'
+#        ,'video-sync':'audio'
         ,'display-fps':60.0
         ,'interpolation-threshold':0.0
         ,'interpolation':True
@@ -155,7 +178,7 @@ class AVPlayer(Q.QOpenGLWidget):
         ,'vo-vaapi-scaled-osd':True
         ,'vo-vdpau-hqscaling':9
         ,'audio-pitch-correction':True
-        ,'video-timing-offset':1/120
+        ,'video-timing-offset':1./30.
         ,'video-latency-hacks':True
         ,'pulse-latency-hacks':False
 #        ,'pulse-buffer':1024
@@ -170,7 +193,7 @@ class AVPlayer(Q.QOpenGLWidget):
         ,'opengl-backend':'x11vk'
         ,'gpu-hwdec-interop':'all'#'vaapi-egl'
         ,'gpu-api':'vulkan'#'vaapi-egl'
-        ,'hwdec-image-format':'vaapi_vld'
+#        ,'hwdec-image-format':'vaapi_vld'
         ,'hwdec-codecs':'all'
           }
     _reportFlip = False
@@ -801,8 +824,25 @@ class CtrlPlayer(Q.QWidget):
     def __init__(self, *args, **kwargs):
         fp = kwargs.pop('fp',None)
         use_tabs = kwargs.pop('tabs',True)
-        super().__init__(*args,**kwargs)
+        try:
+            val = pop_or_raise(kwargs, float, 'timeline_threshold','tl_threshold','timeline_thresh','tl_thresh'
+                ,'timeline-threshold','tl-threshold','timeline-thresh','tl-thresh')
+
+            self.timeline_threshold = val
+            print('setting timeline_threshold to {}'.format(val))
+        except:
+            pass
+
+        try:
+            val = pop_or_raise(kwargs, float, 'timeline_precision','tl_precision','timeline-precision','tl-precision')
+            self.timeline_precision = val
+            print('setting timeline_precision to {}'.format(val))
+        except:
+            pass
+
+        super().__init__(*args,parent=kwargs.pop('parent',None))
         self.eventTypes = defaultdict(lambda:0)
+        self.eventTypeLast = defaultdict(lambda:0)
         self.setSizePolicy(Q.QSizePolicy(
             Q.QSizePolicy.Expanding
           , Q.QSizePolicy.Expanding
@@ -929,11 +969,15 @@ class CtrlPlayer(Q.QWidget):
         self.cmdline = cmdline = CmdLine()
         er_label = self.er_label = Q.QLabel()
         et_label = self.et_label = Q.QPlainTextEdit()
+        et_font  = self.et_font  = Q.QFontDatabase.systemFont(Q.QFontDatabase.FixedFont)
+        et_label.document().setDefaultFont(et_font)
+#        et_label = self.et_label = Q.QTextEdit()
+#        et_labe.textCursor().insertTable(0,2)
         pr_label = self.pr_label = Q.QLabel()
         fr_label = self.fr_label = Q.QLabel()
         sr_label = self.sr_label = Q.QLabel()
         self._timer = Q.QTimer(self)
-        self._timer.setInterval(int(1000/8))
+        self._timer.setInterval(int(1000/6))
         self._timer.setTimerType(Q.Qt.CoarseTimer)
 
         def updateLabels():
@@ -943,21 +987,39 @@ class CtrlPlayer(Q.QWidget):
             self.sr_label.setText('swap rate: {:.6f}'.format(self.childwidget.swapRate))
 
 #            if self.childwidget.eventTimes:
-            _types = defaultdict(lambda :0)
+#            for _ in self.eventTypes.keys():
+#                _types[_] = 0
 #                types.clear()
-            for i in range(len(self.childwidget.eventTimes)):
-                _time,_type = self.childwidget.eventTimes[i]
-                _types[_type] += 1
+            if self.et_label.isVisible():
+                _types = defaultdict(lambda :0)
+                for i in range(len(self.childwidget.eventTimes)):
+                    _time,_type = self.childwidget.eventTimes[i]
+                    self.eventTypeLast[_type] = _time
+                    _types[_type] += 1
+                time = self.childwidget.m.time - self.childwidget._timesWindow * 8
+                for _ in list(self.eventTypes.keys()):
+                    if self.eventTypeLast[_] < time:
+                        del self.eventTypes[_]
+                        del self.eventTypeLast[_]
+                    elif not _ in _types:
+                        _types[_] = 0
 
-            if _types != self.eventTypes:
-                self.eventTypes = _types
-                self.et_label.clear()
+                if _types != self.eventTypes:
+#                for k in self.eventTypes:
+#                    self.eventTypes[k] = _types[k]
 
-                tc = self.et_label.textCursor()
-                tc.movePosition(tc.End,tc.MoveAnchor)
-#                    self.et_label.setTextCursor(tc)
-                for _ in ('{}:\t{}\n'.format(_[0],_[1]) for _ in sorted(_types.items())):
-                    tc.insertText(_)
+                    self.eventTypes = _types
+                    self.et_label.clear()
+                    self.et_label.document().setDefaultFont(self.et_font)
+
+                    tc = self.et_label.textCursor()
+                    tc.movePosition(tc.End,tc.MoveAnchor)
+                    self.et_label.setTextCursor(tc)
+                    stypes = [('{}:'.format(_[0]),'{}'.format(_[1]) if _[1] else '') for _ in sorted(_types.items())]
+                    mlen = max(len(_[0]) for _ in stypes) + 4
+                    for _ in stypes:
+                        txt='{name:<{width}}{val}\n'.format(name=_[0],val=_[1],width=mlen)
+                        tc.insertText(txt)
 #            self.histline.ensureCursorVisible()
 
         self._timer.timeout.connect(updateLabels,Q.Qt.QueuedConnection)
@@ -1120,7 +1182,7 @@ class Canvas(Q.QMainWindow):
         self.propertydock.show()
 #        self.playlistdock.setWidget(self.playlist)
 
-    def __init__(self,*args, fp = None, **kwargs):
+    def __init__(self,*args, fp = None,extra_kwargs=None, **kwargs):
         super().__init__(*args, **kwargs)
 #        self.show()
 #        self.raise_()
@@ -1129,18 +1191,18 @@ class Canvas(Q.QMainWindow):
         self._timer.setTimerType(Q.Qt.PreciseTimer)
 
         tw = Q.QTabWidget(parent=self)
-        cw = CtrlPlayer(*args,parent=self, **kwargs)
+#        extra_kwargs = extra_kwargs or dict()
+        if extra_kwargs is None:
+            extra_kwargs = kwargs
+        else:
+            extra_kwargs.update(**kwargs)
+        print('extra_kwargs is {}'.format(extra_kwargs))
+        cw = CtrlPlayer(*args,parent=self, **extra_kwargs)
 #        cw.show()
         tw.addTab(cw,"video")
         tw.setVisible(True)
 #        cw.childwidget.resize(self.size())
         player = cw.childwidget
-#        player._property_model = AVTreePropertyModel(player=player,parent=player)
-#        tv = Q.QTreeView()
-#c        tv.setModel(player._property_model)
- #       tw.addTab(tv,"properties")
- #       tw.setVisible(True)
-#        self.ctrlwidget = cw
         self.playerwidget = player
 
 #        self._timer.timeout.connect(self.update)
@@ -1193,13 +1255,21 @@ if __name__ == '__main__':
 
     app = Q.QApplication([])
     media = list()
+    extra_args=dict()
+    if args.extra:
+        for e in args.extra.split():
+            if '=' in e.strip():
+                a,_,b = e.partition('=')
+                extra_args[a] = b
     for path in args.path:
         if '=' in path:
-            pass
+            a,_,b = path.partition('=')
+            extra_args[a] = b
         else:
             media.append(path)
-
-    mw = Canvas()
+    if extra_args:
+        print('extra_args is {}'.format(extra_args))
+    mw = Canvas(extra_kwargs=extra_args)
     def main(mw):
         mw.show()
         mw.raise_()
@@ -1253,6 +1323,7 @@ if __name__ == '__main__':
                         ap.m.set_property(a,b)
                     except:
                         pass
+
         for path in args.path:
             if '=' in path:
                 a,_,b = path.partition('=')

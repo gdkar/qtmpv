@@ -24,16 +24,17 @@ if __name__ == '__main__':
     args = list()
     kwargs = dict()
     for arg in sys.argv[1:]:
-        if '=' in arg:
-            parts = arg.partition('=')
-            kwargs[parts[0]] = parts[2]
+        arg = arg.strip()
+        if '=' in arg and not arg.startswith('--'):
+            a,_,b = arg.partition('=')
+            kwargs[a] = b
         else:
             args.append(arg)
 
     with SignalWakeupHandler(app):
         signal.signal(signal.SIGINT, lambda *a:app.quit())
 
-        win = TopWindow(*args, **kwargs)
+        win = TopWindow(*args,**kwargs)
         fmt = Q.QOpenGLContext.globalShareContext().format()
         print('OpenGLFormat:\n')
         print('version={}'.format(fmt.version()))

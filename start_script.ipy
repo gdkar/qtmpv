@@ -26,13 +26,21 @@ parser.add_argument('path', nargs='+')
 args = parser.parse_args()
 
 media = list()
+extra_kwargs=dict()
+if args.extra:
+    for e in args.extra.split():
+        if '=' in e.strip():
+            a,_,b = e.partition('=')
+            extra_kwargs[a] = b
+
 for path in args.path:
     if '=' in path:
-        pass
+        a,_,b = e.partition('=')
+        extra_kwargs[a]=b
     else:
         media.append(path)
 
-mw = Canvas()
+mw = Canvas(extra_kwargs=extra_kwargs)
 ap = mw.playerwidget
 if args.getprocaddress:
     ap._get_proc_address = args.getprocaddress
