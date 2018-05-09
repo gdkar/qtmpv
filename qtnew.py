@@ -8,9 +8,9 @@ import posix,posixpath
 
 if sys.version_info.major > 2:
     basestring = str
-from modproxy import ModuleProxy
-from glproxy  import gl, glx
 from qtproxy import Q, QW, QG
+#from glproxy  import gl, glx
+#from modproxy import ModuleProxy
 #from PyQt5 import Qt as Q, QtWidgets as QW, QtGui as QG
 
 from topwindow import TopWindow
@@ -34,22 +34,24 @@ if __name__ == '__main__':
     with SignalWakeupHandler(app):
         signal.signal(signal.SIGINT, lambda *a:app.quit())
 
-        win = TopWindow(*args,**kwargs)
-        fmt = Q.QOpenGLContext.globalShareContext().format()
-        print('OpenGLFormat:\n')
-        print('version={}'.format(fmt.version()))
-        print('samples={}'.format(fmt.samples()))
-        print('redBufferSize={}'.format(fmt.redBufferSize()))
-        print('greenBufferSize={}'.format(fmt.greenBufferSize()))
-        print('blueBufferSize={}'.format(fmt.blueBufferSize()))
-        print('alphaBufferSize={}'.format(fmt.alphaBufferSize()))
-        print('depthBufferSize={}'.format(fmt.depthBufferSize()))
-        print('stencilBufferSize={}'.format(fmt.stencilBufferSize()))
-        print('swapBehavior={}'.format(fmt.swapBehavior()))
-        print('swapInterval={}'.format(fmt.swapInterval()))
-        print('debugContext={}'.format(fmt.testOption(fmt.DebugContext)))
-        print('deprecatedFunctions={}'.format(fmt.testOption(fmt.DeprecatedFunctions)))
-        print('renderable={}'.format(fmt.renderableType()))
-        app.aboutToQuit.connect(win.close)
-        win.show()
+        def sub_fn():
+            win = TopWindow(*args,**kwargs)
+            app.aboutToQuit.connect(win.close)
+            win.show()
+            fmt = Q.QOpenGLContext.globalShareContext().format()
+            print('OpenGLFormat:\n')
+            print('version={}'.format(fmt.version()))
+            print('samples={}'.format(fmt.samples()))
+            print('redBufferSize={}'.format(fmt.redBufferSize()))
+            print('greenBufferSize={}'.format(fmt.greenBufferSize()))
+            print('blueBufferSize={}'.format(fmt.blueBufferSize()))
+            print('alphaBufferSize={}'.format(fmt.alphaBufferSize()))
+            print('depthBufferSize={}'.format(fmt.depthBufferSize()))
+            print('stencilBufferSize={}'.format(fmt.stencilBufferSize()))
+            print('swapBehavior={}'.format(fmt.swapBehavior()))
+            print('swapInterval={}'.format(fmt.swapInterval()))
+            print('debugContext={}'.format(fmt.testOption(fmt.DebugContext)))
+            print('deprecatedFunctions={}'.format(fmt.testOption(fmt.DeprecatedFunctions)))
+            print('renderable={}'.format(fmt.renderableType()))
+        Q.QTimer.singleShot(0, sub_fn)
         sys.exit(app.exec_())

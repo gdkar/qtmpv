@@ -425,7 +425,9 @@ class AVTreePropertyModel(Q.QAbstractItemModel):
                     sub[sprefix] = [part]
             for k in sorted(sub.keys()):
                 layer(sub[k], proot=root, prefix=k)
-        props = sorted(list(set(player.m.attr_name(_) for _ in player.m.properties)|set('options/{}'.format(player.m.attr_name(_)) for _ in player.m.options)))
+        props = sorted(list(set(player.m.attr_name(_) for _ in player.m.properties if _ != 'option-info')
+            #|set('options/{}'.format(player.m.attr_name(_)) for _ in player.m.options)
+            ))
         parts = [player.get_property(_) for _ in props]
         parts = [_ for _ in parts if _ is not None]
 

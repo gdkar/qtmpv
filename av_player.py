@@ -1,5 +1,6 @@
 #! /usr/bin/env python
 import signal
+import traceback
 from interruptingcow import SignalWakeupHandler
 import weakref
 import math
@@ -150,58 +151,67 @@ class AVPlayer(Q.QOpenGLWidget):
         ,'input-default-bindings':True
         ,'deiniterlace':True
         ,'input_vo_keyboard':False
+#        ,'hidpi-window-scale':True
+#        ,'hdr-compute-peak':True
+#        ,'icc-profile-auto':True
         ,'keep_open':True
         ,'gapless_audio':True
         ,'osc':'yes'
         ,'load-scripts':True
         ,'ytdl':True
         ,'vo':'libmpv'
-#        ,'opengl-fbo-format':'rgba32f'
-        ,'alpha':'no'
+        ,'opengl-fbo-format':'rgba12'
+        ,'alpha':False
         ,'opengl-es':'auto'
+        ,'opengl-dumb-mode':False
         ,'opengl-swapinterval':1
         ,'opengl-waitvsync':False
 #        ,'opengl-vsync-fences':6
-        ,'tscale-radius':4.0
-        ,'tscale-wparam': 1.0
+        ,'tscale-radius':3.0
+        ,'tscale-param1':1/8.
         ,'tscale':'gaussian'
+#        ,'tscale-wparam': 1.5
+#        ,'scale':'spline36'
 #        ,'tscale':'bilinear'
 #        ,'scale':'spline36'
 #        ,'sws-scaler':'sinc'
         ,'interpolation':True
         ,'video-sync':'display-resample'
-#        ,'video-sync':'audio'
-        ,'display-fps':60.0
-        ,'interpolation-threshold':0.0
-        ,'interpolation':True
+        ,'interpolation-threshold':1e-6
+#        ,'display-fps':60.0
         ,'vo-vaapi-scaling':'hq'
         ,'vo-vaapi-scaled-osd':True
         ,'vo-vdpau-hqscaling':9
         ,'audio-pitch-correction':True
-        ,'video-timing-offset':1./30.
-        ,'video-latency-hacks':True
+        ,'video-timing-offset':0./30.
+        ,'video-latency-hacks':False
         ,'pulse-latency-hacks':False
 #        ,'pulse-buffer':1024
 #        ,'audio-buffer':0.125
-        ,'vd-lavc-fast':False
+        ,'vd-lavc-fast':True
         ,'vd-lavc-show-all':True
-        ,'player-operation-mode':'pseudo-gui'
-        ,'hr-seek':'yes'
+#        ,'framedrop':True
+#        ,'player-operation-mode':'pseudo-gui'
+        ,'hr-seek':True
         ,'hr-seek-framedrop':False
-        ,'hwdec-preload':'all'
         ,'hwdec':'yes'
-        ,'opengl-backend':'x11vk'
-        ,'gpu-hwdec-interop':'all'#'vaapi-egl'
+        ,'gpu-context':'x11vk'
+        ,'gpu-hwdec-interop':'vaapi-egl'#'vaapi-egl'
         ,'gpu-api':'vulkan'#'vaapi-egl'
+        ,'vulkan-swap-mode':'mailbox'
+        ,'swapchain-depth':5
 #        ,'hwdec-image-format':'vaapi_vld'
         ,'hwdec-codecs':'all'
           }
     _reportFlip = False
     _reportedFlip = False
     _timesWindow = 1e6
+    _flushWindow = 0.
     _externalDrive = False
     _get_proc_address = 'ctypes'
     _get_proc_address_debug = True
+    _internal_format = 0
+    render_gl = None
     ogl = None
 #    _property_model = None
 
@@ -272,12 +282,13 @@ class AVPlayer(Q.QOpenGLWidget):
 
     def __init__(self, *args,fp=None, **kwargs):
         super().__init__(*args,**kwargs)
+#        self.setTextureFormat(Q.QOpenGLTexture.RGBA)
 
         self.setSizePolicy(Q.QSizePolicy(Q.QSizePolicy.Expanding,Q.QSizePolicy.Expanding))
         self.paintTimes = deque(maxlen=32)
         self.frameTimes = deque(maxlen=32)
         self.swapTimes  = deque(maxlen=32)
-        self.eventTimes = deque(maxlen=2000)
+        self.eventTimes = deque(maxlen=1024)
         self.setMouseTracking(True)
         self._updated = False
         self._timesWindow = 1e6
@@ -288,7 +299,7 @@ class AVPlayer(Q.QOpenGLWidget):
         options = self.base_options.copy()
         new_options,media = self.get_options(*args ,**kwargs)
         options.update(new_options)
-        options['msg-level'] = 'all=status,cplayer=error,video=debug,vd=trace,hwdec=debug,vf=debug,vo=trace,,opengl=trace,af=debug,ao=debug'
+        options['msg-level'] = 'all=v,audio=debug,cplayer=error,video=trace,vd=trace,hwdec=trace,vf=trace,vulkan=trace,gpu=trace,vo=trace,libmpv_render=trace,opengl=trace,out=trace'
 #        options['af']='rubberband=channels=apart:pitch=quality'
         self.new_frame = False
 
@@ -299,9 +310,22 @@ class AVPlayer(Q.QOpenGLWidget):
         self.destroyed.connect(self.just_die,Q.Qt.DirectConnection)
         self.destroyed.connect(lambda:(m.set_wakeup_callback(None),m.shutdown()),Q.Qt.DirectConnection)
 
+        self.wakeup.connect(self.onWakeup,Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
+        self.frameSwapped.connect(self.onFrameSwapped,Q.Qt.DirectConnection|Q.Qt.UniqueConnection)
+
 
         for t in mpv.EventType:
-            self.m.request_event(t, t not in (mpv.EventType.tick,mpv.EventType.none))
+            self.m.request_event(t, t not in (
+                mpv.EventType.tick
+               ,mpv.EventType.none
+               ,mpv.EventType.idle
+               ,mpv.EventType.tracks_changed
+               ,mpv.EventType.tracks_switched
+               ,mpv.EventType.pause
+               ,mpv.EventType.unpause
+               ,mpv.EventType.metadata_update
+               ,mpv.EventType.chapter_change
+               ,))
         self.m.request_event(self.mpv.EventType.property_change,True)
         self.m.request_event(self.mpv.EventType.video_reconfig,True)
         self.m.request_event(self.mpv.EventType.audio_reconfig,True)
@@ -313,7 +337,7 @@ class AVPlayer(Q.QOpenGLWidget):
 
         self.m.set_log_level('terminal-default')
 #        self.m.set_wakeup_callback(self.onEvent)
-        self.m.msg_level='all=status,cplayer=error,video=debug,vd=trace,hwdec=debug,vf=debug,vo=trace,,opengl=trace,af=debug,ao=debug'
+        self.m.msg_level='all=status,cplayer=error,video=debug,vd=trace,hwdec=debug,vf=debug,vo=trace,,gpu=trace,af=debug,ao=debug'
 
         self.mpv_event.connect(self.onEvent,Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
 #        self.m.set_wakeup_callback(self.mpv_event.emit)
@@ -451,7 +475,10 @@ class AVPlayer(Q.QOpenGLWidget):
 #            self.just_die.emit()
             return
         elif event.id is self.mpv.EventType.idle:
-            self.novid.emit()
+            try:
+                self.m.video_dec_params
+            except:
+                self.novid.emit()
         elif event.id is self.mpv.EventType.start_file:
             self.hasvid.emit()
         elif event.id is self.mpv.EventType.audio_reconfig:
@@ -516,11 +543,13 @@ class AVPlayer(Q.QOpenGLWidget):
                     self.onEventData(event)
                 except Exception as e:
                     print(e)
+
     @Q.pyqtSlot()
     def onWakeup(self):
 #        self.doWakeup.emit(self.m.time)
-        self.frameTimeAppend(self.m.time)
-        self.update()
+        if self.render_gl:
+            self.frameTimeAppend(self.m.time)
+            self.update()
 
     def initializeGL(self):
         print('initialize GL')
@@ -539,31 +568,24 @@ class AVPlayer(Q.QOpenGLWidget):
             getprocaddr = _get_proc_address
 
         self.render_gl = self.m.create_render_context(getprocaddr,None)
-#        create_render_context(getprocaddr,None)
-#        self.ogl = self.m.opengl_cb_context
-        #(getprocaddr,None)
-#        self.ogl.init_gl(getprocaddr,None)
-
-        self.wakeup.connect(self.onWakeup,Q.Qt.QueuedConnection|Q.Qt.UniqueConnection)
-        self.doWakeup.connect(self.frameTimeAppend,Q.Qt.QueuedConnection)
-        self.frameSwapped.connect(self.onFrameSwapped,Q.Qt.DirectConnection)
         render_gl = self.render_gl
 #        weakref.finalize(self, lambda : self.ogl.shutdown())
 #        self.ogl.set_update_callback(self.wakeup.emit)
         self.destroyed.connect(lambda:(self.render_gl.set_update_callback(None),self.render_gl.shutdown()),Q.Qt.DirectConnection)
 #        self.ogl.set_update_callback_thread(self.wakeup.emit)
-        self.render_gl.set_update_callback(self.onWakeup)
+        self.render_gl.set_update_callback(lambda :self.wakeup.emit())
 #        self.ogl.set_update_callback(self.wakeup.emit)
         self.openglInitialized.emit(Q.QOpenGLContext.currentContext())
 
     @Q.pyqtSlot()
     def onFrameSwapped(self):
-        self.swapTimeAppend(self.m.time)
-        if self._updated:
-            self._updated = False
-        if self.reportFlip:
-            self.render_gl.report_flip()
-            self._reportedFlip = True
+        if self.render_gl:
+            self.swapTimeAppend(self.m.time)
+            if self._updated:
+                self._updated = False
+            if self.reportFlip:
+                self.render_gl.report_flip()
+                self._reportedFlip = True
 
     @property
     def reportFlip(self):
@@ -589,7 +611,8 @@ class AVPlayer(Q.QOpenGLWidget):
 
     def paintGL(self):
         self.paintTimeAppend(self.m.time)
-        self.render_gl.draw(self.defaultFramebufferObject(),self._width,-self._height)
+#        if self._updated:
+        self.render_gl.draw(self.defaultFramebufferObject(),self._width,-self._height,0)
         self._updated = True
 
 class CmdLine(Q.QLineEdit):
@@ -667,7 +690,7 @@ class CtrlPlayer(Q.QWidget):
     vwidth = 640
     vheight = 480
     timeline_precision = 1e-5
-    timeline_threshold = 1e-4
+    timeline_threshold = 1e-3
     pitch_bend =  1.0
 
     def reconfig(self,width,height):
@@ -678,17 +701,18 @@ class CtrlPlayer(Q.QWidget):
         if self.vwidth and self.vheight:
             self.childwidget.img_width = self.vwidth
             self.childwidget.img_height = self.vheight
-            if (not self.sized_once) and width:
+            if (not self.sized_once) and (width and height):
+                if self.vwidth > self.childwidget.width() or self.vheight > self.childwidget.height():
 #                self.childwidget.setMinimumSize(Q.QSize(self.vwidth // 64,self.vheight // 64))
-                self.adjustSize()
-                self.adjustSize()
-                parent = self.parent()
-                if parent:
-                    parent.adjustSize()
-                    parent = parent.parent()
+                    self.adjustSize()
+                    self.adjustSize()
+                    parent = self.parent()
                     if parent:
                         parent.adjustSize()
-                self.window().update()
+                        parent = parent.parent()
+                        if parent:
+                            parent.adjustSize()
+                    self.window().update()
                 if not self.sized_once:
                     self.sized_once = True
                     self.show()
@@ -825,6 +849,21 @@ class CtrlPlayer(Q.QWidget):
         fp = kwargs.pop('fp',None)
         use_tabs = kwargs.pop('tabs',True)
         try:
+            val = pop_or_raise(kwargs, float, 'times_window','twindow','times-window','timesWindow')
+            self._timesWindow = val
+        except:
+            pass
+        try:
+            val = pop_or_raise(kwargs, float, 'flush_window','fwindow','flush-window','flushWindow')
+            self._flushWindow = max(self._timesWindow,val)
+        except:
+            try:
+                val = pop_or_raise(kwargs, float, 'flush_factor','ffactor','flush-factor','flushFactor')
+                self._flushWindow = self._timesWindow * max(0.,val)
+            except:
+                pass
+
+        try:
             val = pop_or_raise(kwargs, float, 'timeline_threshold','tl_threshold','timeline_thresh','tl_thresh'
                 ,'timeline-threshold','tl-threshold','timeline-thresh','tl-thresh')
 
@@ -841,8 +880,7 @@ class CtrlPlayer(Q.QWidget):
             pass
 
         super().__init__(*args,parent=kwargs.pop('parent',None))
-        self.eventTypes = defaultdict(lambda:0)
-        self.eventTypeLast = defaultdict(lambda:0)
+        self.eventTypes = defaultdict(lambda:(0,0))
         self.setSizePolicy(Q.QSizePolicy(
             Q.QSizePolicy.Expanding
           , Q.QSizePolicy.Expanding
@@ -950,8 +988,16 @@ class CtrlPlayer(Q.QWidget):
         childwidget.novid.connect(self.novid)
         childwidget.hasvid.connect(self.hasvid)
         self.sized_once = False
-        self.reconfig(640,480)
-        self.sized_once = False
+        self.childwidget.img_width = self.vwidth = 640
+        self.childwidget.img_height = self.vheight = 480
+        self.childwidget.adjustSize()
+        self.childwidget.adjustSize()
+#        def recon():
+#            self.reconfig(640,480)
+#            self.sized_once = False
+#        Q.QTimer.singleShot(0,recon)
+#        self.reconfig(640,480)
+#        self.sized_once = False
 
         controls_layout.addLayout(control_layout)
 
@@ -977,7 +1023,7 @@ class CtrlPlayer(Q.QWidget):
         fr_label = self.fr_label = Q.QLabel()
         sr_label = self.sr_label = Q.QLabel()
         self._timer = Q.QTimer(self)
-        self._timer.setInterval(int(1000/6))
+        self._timer.setInterval(int(1000/12))
         self._timer.setTimerType(Q.Qt.CoarseTimer)
 
         def updateLabels():
@@ -990,36 +1036,50 @@ class CtrlPlayer(Q.QWidget):
 #            for _ in self.eventTypes.keys():
 #                _types[_] = 0
 #                types.clear()
-            if self.et_label.isVisible():
-                _types = defaultdict(lambda :0)
-                for i in range(len(self.childwidget.eventTimes)):
-                    _time,_type = self.childwidget.eventTimes[i]
-                    self.eventTypeLast[_type] = _time
-                    _types[_type] += 1
-                time = self.childwidget.m.time - self.childwidget._timesWindow * 8
-                for _ in list(self.eventTypes.keys()):
-                    if self.eventTypeLast[_] < time:
-                        del self.eventTypes[_]
-                        del self.eventTypeLast[_]
-                    elif not _ in _types:
-                        _types[_] = 0
+            _types = self.eventTypes#defaultdict(lambda :(0,0))
+            if self.childwidget._flushWindow <= self.childwidget._timesWindow:
+                _types.clear()
+            else:
+                now = self.childwidget.m.time
+                time = now - self.childwidget._flushWindow
 
-                if _types != self.eventTypes:
+                for k,v in list(_types.items()):
+                    if v[1] < time:
+                        del _types[k]
+                    elif v[0]:
+                        _types[k] = (0,v[1])
+
+            for i in range(len(self.childwidget.eventTimes)):
+                _time,_type= self.childwidget.eventTimes[i]
+                _types[_type] = (_types[_type][0] + 1, _time)
+
+#                if _types != self.eventTypes:
 #                for k in self.eventTypes:
 #                    self.eventTypes[k] = _types[k]
 
-                    self.eventTypes = _types
-                    self.et_label.clear()
-                    self.et_label.document().setDefaultFont(self.et_font)
+            if self.et_label.isVisible():
+#                    self.et_label.clear()
+                self.et_label.document().setDefaultFont(self.et_font)
 
-                    tc = self.et_label.textCursor()
-                    tc.movePosition(tc.End,tc.MoveAnchor)
-                    self.et_label.setTextCursor(tc)
-                    stypes = [('{}:'.format(_[0]),'{}'.format(_[1]) if _[1] else '') for _ in sorted(_types.items())]
-                    mlen = max(len(_[0]) for _ in stypes) + 4
-                    for _ in stypes:
-                        txt='{name:<{width}}{val}\n'.format(name=_[0],val=_[1],width=mlen)
-                        tc.insertText(txt)
+                tc = self.et_label.textCursor()
+                tc.beginEditBlock()
+                tc.movePosition(tc.Start,tc.MoveAnchor)
+#                    self.et_label.setTextCursor(tc)
+                stypes = [('{}:'.format(k),'{}'.format(v[0]) if v[0] else '') for k,v in sorted(_types.items())]
+                mlen = max(len(_[0]) for _ in stypes) + 4
+                for _ in stypes:
+                    tc.select(tc.BlockUnderCursor)
+#                        tc.removeSelectedText()
+#                        if tc.atEnd():
+                    tc.insertText('{name:<{width}}{val}\n'.format(name=_[0],val=_[1],width=mlen))
+#                        else:
+#                            tc.insertText('{name:<{width}}{val}'.format(name=_[0],val=_[1],width=mlen))
+
+                tc.movePosition(tc.End,tc.KeepAnchor)
+                tc.removeSelectedText()
+                tc.endEditBlock()
+#                    for _ in stypes)
+#                    tc.insertText(txt)
 #            self.histline.ensureCursorVisible()
 
         self._timer.timeout.connect(updateLabels,Q.Qt.QueuedConnection)
@@ -1248,6 +1308,8 @@ if __name__ == '__main__':
     parser.add_argument('--getprocaddress',default=None,action='store')
     parser.add_argument('--getprocaddressquiet',action='store_true')
     parser.add_argument('--times_window',default=None,type=float)
+    parser.add_argument('--flush_window',default=None,type=float)
+    parser.add_argument('--flush_factor',default=None,type=float)
     parser.add_argument('--forcerate',type=float,default=None)
     parser.add_argument('--nrf','--no-reportflip',action='store_true')
 
@@ -1286,8 +1348,17 @@ if __name__ == '__main__':
             ap._get_proc_address = args.getprocaddress
         if args.getprocaddressquiet:
             ap._get_proc_address_debug = False
+        flush_factor = 0
+        flush_window = None
         if args.times_window is not None:
             ap._timesWindow = args.times_window * 1e6
+        if args.flush_factor is not None:
+            flush_window = args.flush_factor * ap._timesWindow
+        if args.flush_window is not None:
+            flush_window = max(ap._timesWindow,args.flush_window)
+        if flush_window:
+            ap._flushWindow = flush_window
+
         def dump_fmt(fmt):
             print('OpenGLFormat:\n')
             print('version={}'.format(fmt.version()))

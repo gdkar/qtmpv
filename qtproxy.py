@@ -14,9 +14,23 @@ fmt.setProfile(QSurfaceFormat.CoreProfile)
 fmt.setRedBufferSize(8);
 fmt.setGreenBufferSize(8);
 fmt.setBlueBufferSize(8);
-fmt.setAlphaBufferSize(8);
-fmt.setDepthBufferSize(24);
-fmt.setStencilBufferSize(8);
+try:
+    a_size = int(posix.environ.get(b'AV_PLAYER_OGL_ALPHA_SIZE',b'8'))
+    fmt.setAlphaBufferSize(a_size);
+except:
+    pass
+try:
+    a_size = int(posix.environ.get(b'AV_PLAYER_OGL_DEPTH_SIZE',b'24'))
+    fmt.setDepthBufferSize(a_size);
+except:
+    pass
+try:
+    a_size = int(posix.environ.get(b'AV_PLAYER_OGL_STENCIL_SIZE',b'8'))
+    fmt.setStencilBufferSize(a_size);
+except:
+    pass
+
+#fmt.setStencilBufferSize(8);
 
 version_str = posix.environ.get(b'AV_PLAYER_OGL_VERSION',None)
 version = None
@@ -73,6 +87,6 @@ except: pass
 
 QSurfaceFormat.setDefaultFormat(fmt)
 QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
-QCoreApplication.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings)
+#QCoreApplication.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings)
 
 from PyQt5 import Qt as Q, QtCore as QC, QtWidgets as QW, QtGui as QG, QtOpenGL as QOGL

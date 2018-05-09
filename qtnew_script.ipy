@@ -4,7 +4,8 @@ import sys,argparse
 from qtproxy import Q
 %gui qt5
 
-from av_player import *
+from topwindow import TopWindow
+#from av_player import *
 
 app = Q.QApplication.instance() or Q.QApplication([])
 
@@ -12,7 +13,20 @@ print(app)
 
 #app.lastWindowClosed.connect(lambda :(app.quit()),Q.Qt.DirectConnection)
 app.setQuitOnLastWindowClosed(True)
+args = list()
+kwargs = dict()
+for arg in sys.argv[1:]:
+    arg = arg.strip()
+    if '=' in arg and not arg.startswith('--'):
+        a,_,b = arg.partition('=')
+        kwargs[a] = b
+    else:
+        args.append(arg)
 
+mw = TopWindow(*args, **kwargs)
+app.aboutToQuit.connect(mw.close)
+mw.show()
+"""
 parser = argparse.ArgumentParser()
 parser.add_argument('-f', '--format')
 parser.add_argument('--extra',default=None,action='store')
@@ -40,7 +54,7 @@ for path in args.path:
     else:
         media.append(path)
 
-mw = Canvas(extra_kwargs=extra_kwargs)
+mw = TopWindow(extra_kwargs=extra_kwargs)
 ap = mw.playerwidget
 if args.getprocaddress:
     ap._get_proc_address = args.getprocaddress
@@ -53,6 +67,7 @@ if args.nrf:
     ap.reportFlip = False
 else:
     ap.reportFlip = True
+
 def dump_fmt(fmt):
     print('OpenGLFormat:\n')
     print('version={}'.format(fmt.version()))
@@ -94,7 +109,7 @@ mw.show()
 print('media: ',media)
 for path in media:
     ap.try_command('loadfile',path,'append-play')
-
+"""
 #ap.try_command('set','vf', "scale=w=2*iw:h=2*ih")
 
 #ap.m.alpha = 'no'

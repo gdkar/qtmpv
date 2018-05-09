@@ -2,6 +2,7 @@ from PyQt5 import Qt as Q, QtWidgets as QW, QtGui as QG
 #from playerwidget import PlayerWidget
 from av_player import AVPlayer, CtrlPlayer
 from av_propertymodel import AVTreePropertyModel
+import traceback
 import sys
 class TopWindow(Q.QMainWindow):
     crossfadeChanged = Q.pyqtSignal(int)
@@ -162,58 +163,59 @@ class TopWindow(Q.QMainWindow):
        self._timer.setInterval(int(1000/val))
 
     def makeWidgetFor(self,*args, **kwargs):
-        plst = [self.playlist.item(i).path for i in range(self.playlist.count())] if self.playlist else []
-        plst = [_.resolve().absolute().as_posix() for _ in plst if _]
+        try:
+            plst = [self.playlist.item(i).path for i in range(self.playlist.count())] if self.playlist else []
+            plst = [_.resolve().absolute().as_posix() for _ in plst if _]
 #        print(plst)
-        kwargs.update(self._options)
-        print('args',args)
-        print('kwargs',kwargs)
-        cw = CtrlPlayer(*args, fp=plst,**kwargs)
-        player = cw.childwidget
-        for k,v in kwargs.items():
-            try:
-                player.m.set_property(k,v)
-            except:
-                pass
+            kwargs.update(self._options)
+            print('args',args)
+            print('kwargs',kwargs)
+            cw = CtrlPlayer(*args, fp=plst,**kwargs)
+            player = cw.childwidget
+            for k,v in kwargs.items():
+                try:
+                    player.m.set_property(k,v)
+                except:
+                    pass
 
-        if self._use_tabs:
-            tw = Q.QTabWidget(parent=None)
-            tw.addTab(cw,"video")
+            if self._use_tabs:
+                tw = Q.QTabWidget(parent=None)
+                tw.addTab(cw,"video")
 
-            cw.childwidget.resize(self.size())
+                cw.childwidget.resize(self.size())
 #        if player._property_model is None:
 #            player._property_model = AVTreePropertyModel(player=player,parent=player)
-            tv = Q.QTreeView()
-            if player._property_model is not None:
-                tv.setModel(player._property_model)
+                tv = Q.QTreeView()
+                if player._property_model is not None:
+                    tv.setModel(player._property_model)
 #            tv.setModel(player.getPropertyModel())
-            player.propertyModelChanged.connect(lambda val:tv.setModel(val))
-            tw.addTab(tv,"properties")
-        else:
-            tw = cw
+                player.propertyModelChanged.connect(lambda val:tv.setModel(val))
+                tw.addTab(tv,"properties")
+            else:
+                tw = cw
 
-        self._timer.timeout.connect(cw.update,Q.Qt.DirectConnection)
-        player.index = self.next_id
-        player._playlist = self.playlist
-        self.next_id += 1
+            self._timer.timeout.connect(cw.update,Q.Qt.DirectConnection)
+            player.index = self.next_id
+            player._playlist = self.playlist
+            self.next_id += 1
 #        self.cascadeSubWindows.connect(cw.idealConfig)
 #        self.crossfadeChanged.connect(cw.onCrossfadeChanged)
-        if self._use_mdi:
-            self.mdiArea.addSubWindow(tw)
-            tw.adjustSize()
-            tw.parent().adjustSize()
-            tw.parent().update()
-        else:
-            mdi = Q.QMainWindow(parent=self,flags=Q.Qt.Dialog)
-            mdi.show()
-            mdi.raise_()
-            mdi.setCentralWidget(tw)
+            if self._use_mdi:
+                self.mdiArea.addSubWindow(tw)
+                tw.adjustSize()
+                tw.parent().adjustSize()
+                tw.parent().update()
+            else:
+                mdi = Q.QMainWindow(parent=self,flags=Q.Qt.Dialog)
+                mdi.show()
+                mdi.raise_()
+                mdi.setCentralWidget(tw)
 
-        tw.destroyed.connect(tw.parent().close,Q.Qt.DirectConnection)
-        tw.setVisible(True)
-        player.playlist.forceUpdate()
-        for _ in plst:
-            player.try_command('loadfile',_,'append-play',_async=False)
+            tw.destroyed.connect(tw.parent().close,Q.Qt.DirectConnection)
+            tw.setVisible(True)
+            player.playlist.forceUpdate()
+            for _ in plst:
+                player.try_command('loadfile',_,'append-play',_async=False)
 #        if self.playlist:
 #            for item in self.playlist.items():
 #                print(item)
@@ -223,4 +225,7 @@ class TopWindow(Q.QMainWindow):
 #                except:
 #                    pass
 
-        return player
+            return player
+        except BaseException as e:
+            print(e)
+            traceback.print_last()
